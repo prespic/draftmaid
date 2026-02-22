@@ -563,7 +563,63 @@ test.describe('Combined Features', () => {
 });
 
 // ═══════════════════════════════════════════════════════
-//  10. UI INTERACTIONS
+//  10. EXAMPLES DROPDOWN
+// ═══════════════════════════════════════════════════════
+
+test.describe('Examples Dropdown', () => {
+  test('select element exists with correct option count', async ({ page }) => {
+    const select = page.locator('#example-select');
+    await expect(select).toBeVisible();
+    // EXAMPLES.length + 1 placeholder
+    const count = await select.locator('option').count();
+    const examplesLength = await page.evaluate(() => EXAMPLES.length);
+    expect(count).toBe(examplesLength + 1);
+  });
+
+  test('selecting an example fills the editor textarea', async ({ page }) => {
+    const select = page.locator('#example-select');
+    // Select the second example (index 1 = A-rám police)
+    await select.selectOption('1');
+    await page.waitForTimeout(350);
+    const value = await page.locator('#code').inputValue();
+    expect(value).toContain('A-rám police');
+  });
+
+  test('board count updates after selection', async ({ page }) => {
+    const select = page.locator('#example-select');
+    // Select A-rám police (4 boards)
+    await select.selectOption('1');
+    await page.waitForTimeout(350);
+    const count = await getBoards(page);
+    expect(count).toBeGreaterThan(0);
+  });
+
+  test('no errors shown for any example', async ({ page }) => {
+    const select = page.locator('#example-select');
+    const examplesLength = await page.evaluate(() => EXAMPLES.length);
+    for (let i = 0; i < examplesLength; i++) {
+      await select.selectOption(String(i));
+      await page.waitForTimeout(350);
+      const errors = await getErrors(page);
+      expect(errors).toBe('');
+    }
+  });
+
+  test('typing in editor resets select to placeholder', async ({ page }) => {
+    const select = page.locator('#example-select');
+    // Select an example first
+    await select.selectOption('1');
+    await page.waitForTimeout(350);
+    expect(await select.inputValue()).toBe('1');
+    // Type in editor
+    await page.locator('#code').press('End');
+    await page.locator('#code').type(' ');
+    expect(await select.inputValue()).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  11. UI INTERACTIONS
 // ═══════════════════════════════════════════════════════
 
 test.describe('UI Interactions', () => {

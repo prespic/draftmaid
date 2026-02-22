@@ -1,7 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  DEFAULT_CODE, AUTO_COLORS, DSLParser, parseDSL,
+  DEFAULT_CODE, EXAMPLES, AUTO_COLORS, DSLParser, parseDSL,
   darken, boardCount, hasCuts, boardShape, listViewDims,
   encodeHash, decodeHash, projectBoard, projAxisLabels,
 } = require('../lib/engine.js');
@@ -37,6 +37,43 @@ describe('Constants', () => {
     for (const c of AUTO_COLORS) {
       assert.match(c, /^#[0-9a-fA-F]{6}$/);
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  1b. EXAMPLES
+// ═══════════════════════════════════════════════════════
+describe('EXAMPLES', () => {
+  it('EXAMPLES is a non-empty array', () => {
+    assert.ok(Array.isArray(EXAMPLES));
+    assert.ok(EXAMPLES.length > 0);
+  });
+
+  it('each entry has name (string) and code (string)', () => {
+    for (const ex of EXAMPLES) {
+      assert.equal(typeof ex.name, 'string');
+      assert.ok(ex.name.length > 0);
+      assert.equal(typeof ex.code, 'string');
+      assert.ok(ex.code.length > 0);
+    }
+  });
+
+  it('each code parses with 0 errors', () => {
+    for (const ex of EXAMPLES) {
+      const { errors } = parseDSL(ex.code);
+      assert.deepEqual(errors, [], `Example "${ex.name}" has errors: ${errors.join(', ')}`);
+    }
+  });
+
+  it('each code produces at least 1 board', () => {
+    for (const ex of EXAMPLES) {
+      const { boards } = parseDSL(ex.code);
+      assert.ok(boards.length >= 1, `Example "${ex.name}" produced 0 boards`);
+    }
+  });
+
+  it('first example is DEFAULT_CODE', () => {
+    assert.equal(EXAMPLES[0].code, DEFAULT_CODE);
   });
 });
 
