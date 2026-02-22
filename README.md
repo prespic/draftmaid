@@ -1,8 +1,8 @@
-# FurniCAD
+# DraftMaid
 
 A lightweight browser-based CAD tool for planning furniture boards — no installation, no backend, just a single HTML file.
 
-🔗 **[Live demo via GitHub Pages](https://YOUR-USERNAME.github.io/furnicad/)**
+🔗 **[Live demo via GitHub Pages](https://prespic.github.io/draftmaid/)**
 
 ---
 
@@ -65,7 +65,7 @@ Just open `index.html` in any modern browser — no build step, no dependencies 
 1. Push this repo to GitHub
 2. Go to **Settings → Pages**
 3. Source: **Deploy from branch**, branch: `main`, folder: `/ (root)`
-4. Save — your site will be live at `https://YOUR-USERNAME.github.io/furnicad/`
+4. Save — your site will be live at `https://prespic.github.io/draftmaid/`
 
 ---
 

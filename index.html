@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FurniCAD v0.2</title>
+  <title>DraftMaid v0.2</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="lib/engine.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -118,7 +119,7 @@
 <body>
 
 <header>
-  <div class="logo">Furni<em>CAD</em></div>
+  <div class="logo">Draft<em>Maid</em></div>
   <span class="badge">v0.2</span>
   <div class="hdr-stats">
     <span class="hdr-stat">Desky: <b id="hdr-count">0</b></span>
@@ -138,9 +139,12 @@
       <div class="syn-row"><span class="k">$název</span> = <span class="v">hodnota</span> &nbsp;<span class="c"># proměnná</span></div>
       <div class="syn-row"><span class="k">board</span>[<span class="v">id</span>] <span class="v">Š x V x H</span> <span class="k">"název"</span></div>
       <div class="syn-row">&nbsp;&nbsp; at <span class="v">X, Y, Z</span> &nbsp;<span class="c"># volitelné</span></div>
-      <div class="syn-row">&nbsp;&nbsp; color <span class="v">#hex</span> &nbsp;<span class="c"># volitelné</span></div>
-      <div class="syn-row" style="margin-top:4px;"><span class="c"># Výrazy: $var, {id.top}, {id.right}</span></div>
-      <div class="syn-row"><span class="c"># Vlastnosti: .x .y .z .right .top .back .w .h .d</span></div>
+      <div class="syn-row">&nbsp;&nbsp; from <span class="v">X1,Y1</span> to <span class="v">X2,Y2</span> [z <span class="v">Z</span>]</div>
+      <div class="syn-row">&nbsp;&nbsp; cut <span class="v">left V right V</span> &nbsp;<span class="c"># ořez</span></div>
+      <div class="syn-row">&nbsp;&nbsp; view <span class="v">f|s|t</span> &nbsp;<span class="c"># pohled v seznamu</span></div>
+      <div class="syn-row">&nbsp;&nbsp; color <span class="v">#hex</span> &nbsp;<span class="c"># volitelné (automatické)</span></div>
+      <div class="syn-row" style="margin-top:4px;"><span class="c"># Výrazy: $var, {id.top}, LEN(x1,y1,x2,y2)</span></div>
+      <div class="syn-row"><span class="c"># Vlastnosti: .x .y .z .right .top .back .w .h .d .angle .x2 .y2</span></div>
     </div>
     <div class="editor-footer">
       <span id="stat-boards">0 desek</span>
@@ -161,6 +165,13 @@
       <div class="sub-toolbar">
         <button class="view-btn active" id="btn-assemble">⬛ Sestaveno</button>
         <button class="view-btn" id="btn-list">≡ Seznam desek</button>
+        <div class="sub-sep" id="proj-sep"></div>
+        <button class="sort-btn active" id="proj-front" data-proj="front">Přední</button>
+        <button class="sort-btn" id="proj-back" data-proj="back">Zadní</button>
+        <button class="sort-btn" id="proj-left" data-proj="left">Levý</button>
+        <button class="sort-btn" id="proj-right" data-proj="right">Pravý</button>
+        <button class="sort-btn" id="proj-top" data-proj="top">Horní</button>
+        <button class="sort-btn" id="proj-bottom" data-proj="bottom">Spodní</button>
         <div class="sub-sep" id="sort-sep" style="display:none;"></div>
         <span class="sort-label" id="sort-lbl" style="display:none;">Řadit:</span>
         <button class="sort-btn active" id="sort-name" style="display:none;" data-sort="name">Název</button>
@@ -203,183 +214,20 @@
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-//  DEFAULT CODE
-// ═══════════════════════════════════════════════════════
-const DEFAULT_CODE = `# Skříňka 80 × 40 × 200 cm
-# ── Proměnné ──────────────────────────
-$T  = 18        # tloušťka desky [mm]
-$W  = 800       # vnější šířka
-$H  = 2000      # vnější výška
-$D  = 400       # hloubka
-
-# ── Desky ─────────────────────────────
-board[dn]     $W x $T x $D    "Dno"         at 0, 0, 0              color #7a4f28
-board[lt]     $T x $H x $D    "Levý bok"    at 0, 0, 0              color #9a6235
-board[rt]     $T x $H x $D    "Pravý bok"   at {lt.right}+$W, 0, 0  color #9a6235
-board[tp]     $W+{lt.w} x $T x $D "Strop"  at {lt.x}, {lt.top}-$T, 0  color #7a4f28
-board[bk]     {lt.right}+$W x $H x $T "Záda" at {lt.x}, {lt.y}, $D-$T  color #5c3a1e
-board[p1]     $W x $T x $D-$T  "Police 1"  at {lt.right}, {dn.top}+380, {dn.z}    color #c49a6c
-board[p2]     $W x $T x $D-$T  "Police 2"  at {p1.x}, {p1.top}+380, {p1.z}       color #c49a6c
-board[p3]     $W x $T x $D-$T  "Police 3"  at {p2.x}, {p2.top}+380, {p2.z}       color #c49a6c`;
-
-// ═══════════════════════════════════════════════════════
-//  PARSER
-// ═══════════════════════════════════════════════════════
-const AUTO_COLORS = [
-  '#c9a05a','#b8864a','#d4b87a','#a07040',
-  '#e8c99a','#8b6035','#daa060','#c08040',
-  '#7a6050','#d4a080','#b09070','#9a7055',
-];
-
-class DSLParser {
-  constructor(text) {
-    this.text = text;
-    this.vars = {};
-    this.boards = [];
-    this.errors = [];
-    this.reg = {};
-    this.varCount = 0;
-  }
-
-  parse() {
-    const lines = this.text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i];
-      const line = raw.trim();
-      if (!line || line.startsWith('#') || line.startsWith('//')) continue;
-      if (line.startsWith('$')) { this.parseVar(line, i+1); continue; }
-      if (/^board/i.test(line))  { this.parseBoard(line, i+1); continue; }
-      this.errors.push(`Řádek ${i+1}: neznámý příkaz`);
-    }
-    return { boards: this.boards, errors: this.errors, varCount: this.varCount };
-  }
-
-  parseVar(line, ln) {
-    const m = line.match(/^\$([a-zA-Z_]\w*)\s*=\s*(.+?)(?:\s*#.*)?$/);
-    if (!m) { this.errors.push(`Řádek ${ln}: neplatná definice proměnné`); return; }
-    try {
-      this.vars[m[1]] = this.eval(m[2].trim());
-      this.varCount++;
-    } catch(e) { this.errors.push(`Řádek ${ln} ($${m[1]}): ${e.message}`); }
-  }
-
-  parseBoard(line, ln) {
-    // board[id]  W x H x D  "name"  [at X, Y, Z]  [color #hex]
-    // Capture everything after the optional [id] and dimensions until "name"
-    const re = /^board(?:\[([a-zA-Z_]\w*)\])?\s+(.+?)\s+"([^"]+)"(?:\s+at\s+(.+?))?(?:\s+color\s+(#[0-9a-fA-F]{3,6}))?\s*(?:#.*)?$/i;
-    const m = line.match(re);
-    if (!m) { this.errors.push(`Řádek ${ln}: neplatný board (vzor: board[id] ŠxVxH "název")`); return; }
-
-    const id    = m[1] || `b${this.boards.length}`;
-    const dimRaw= m[2].trim();
-    const name  = m[3];
-    const atRaw = m[4] ? m[4].trim() : null;
-    const color = m[5] || AUTO_COLORS[this.boards.length % AUTO_COLORS.length];
-
-    if (this.reg[id]) { this.errors.push(`Řádek ${ln}: duplicitní ID [${id}]`); return; }
-
-    try {
-      // Split dimensions on 'x' that sits between value-like tokens
-      const dims = dimRaw.split(/\s*[xXх]\s*(?=[0-9$({])/);
-      if (dims.length !== 3) throw new Error(`Potřebuji 3 rozměry (Š x V x H), dostal jsem ${dims.length}: "${dimRaw}"`);
-      const w = this.eval(dims[0].trim());
-      const h = this.eval(dims[1].trim());
-      const d = this.eval(dims[2].trim());
-
-      let x=null, y=null, z=null, hasPos=false;
-      if (atRaw) {
-        const coords = this.splitCoords(atRaw);
-        if (coords.length !== 3) throw new Error(`Pozice potřebuje 3 hodnoty (X, Y, Z)`);
-        x = this.eval(coords[0].trim());
-        y = this.eval(coords[1].trim());
-        z = this.eval(coords[2].trim());
-        hasPos = true;
-      }
-
-      const board = { id, name, w, h, d, x, y, z, hasPos, color, visible: true };
-      this.boards.push(board);
-      this.reg[id] = board;
-    } catch(e) {
-      this.errors.push(`Řádek ${ln} (${name}): ${e.message}`);
-    }
-  }
-
-  // Split coords: X, Y, Z — but respect nested braces
-  splitCoords(str) {
-    const parts = []; let depth = 0; let cur = '';
-    for (const ch of str) {
-      if (ch === '{' || ch === '(') depth++;
-      else if (ch === '}' || ch === ')') depth--;
-      if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; }
-      else cur += ch;
-    }
-    parts.push(cur);
-    return parts;
-  }
-
-  eval(expr) {
-    // 1. Replace $var
-    let e = String(expr).replace(/\$([a-zA-Z_]\w*)/g, (_, n) => {
-      if (this.vars[n] !== undefined) return this.vars[n];
-      throw new Error(`Neznámá proměnná $${n}`);
-    });
-    // 2. Replace {id.prop}
-    e = e.replace(/\{([a-zA-Z_]\w*)\.([a-zA-Z]+)\}/g, (_, id, prop) => {
-      const b = this.reg[id];
-      if (!b) throw new Error(`Neznámé ID [${id}]`);
-      return this.prop(b, prop, id);
-    });
-    // 3. Safe math
-    return this.math(e);
-  }
-
-  prop(b, p, id) {
-    const x=b.x??0, y=b.y??0, z=b.z??0;
-    switch(p) {
-      case 'x': return x; case 'y': return y; case 'z': return z;
-      case 'w': return b.w; case 'h': return b.h; case 'd': return b.d;
-      case 'right': return x+b.w; case 'top': return y+b.h; case 'back': return z+b.d;
-      case 'cx': return x+b.w/2; case 'cy': return y+b.h/2;
-    }
-    throw new Error(`Neznámá vlastnost .${p} na [${id}]`);
-  }
-
-  math(expr) {
-    const e = String(expr).trim();
-    if (!/^[\d\s\+\-\*\/\(\)\.]+$/.test(e))
-      throw new Error(`Neplatný výraz: "${e}" (povoleny: čísla, +,-,*,/,()`);
-    try {
-      const r = Function(`"use strict";return (${e})`)();
-      if (typeof r !== 'number' || !isFinite(r)) throw new Error('Výsledek není číslo');
-      return Math.round(r * 1000) / 1000;
-    } catch(err) { throw new Error(`Chyba výrazu "${e}"`); }
-  }
-}
-
-function parseDSL(text) {
-  return new DSLParser(text).parse();
-}
-
-// ═══════════════════════════════════════════════════════
-//  HELPERS
-// ═══════════════════════════════════════════════════════
 function svgEl(tag, attrs={}, text='') {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [k,v] of Object.entries(attrs)) el.setAttribute(k,v);
   if (text) el.textContent = text;
   return el;
 }
-function darken(hex, f=0.5) {
-  if (!hex||hex.length<7) return '#333';
-  const r=(parseInt(hex.slice(1,3),16)*f|0).toString(16).padStart(2,'0');
-  const g=(parseInt(hex.slice(3,5),16)*f|0).toString(16).padStart(2,'0');
-  const b=(parseInt(hex.slice(5,7),16)*f|0).toString(16).padStart(2,'0');
-  return `#${r}${g}${b}`;
+function saveToHash(text) {
+  try { history.replaceState(null, '', '#code/' + encodeHash(text)); }
+  catch(e) {}
 }
-function boardCount(n) {
-  if(n===0) return '0 desek'; if(n===1) return '1 deska';
-  if(n<5) return `${n} desky`; return `${n} desek`;
+function loadFromHash() {
+  const h = window.location.hash;
+  if (!h.startsWith('#code/')) return null;
+  return decodeHash(h.slice(6));
 }
 
 // ═══════════════════════════════════════════════════════
@@ -401,18 +249,36 @@ function render2DAssemble(boards) {
   const vis = boards.filter(b=>b.visible!==false);
   if (!vis.length) return;
 
+  const proj = assembleProjection;
   const allPos = vis.every(b=>b.hasPos&&b.x!==null);
   let layout;
   if (allPos) {
-    layout = vis.map(b=>({...b,lx:b.x,ly:b.y}));
+    layout = vis.map(b=>{const p=projectBoard(b,proj); return {...b,...p};});
   } else {
-    let cx=0; layout = vis.map(b=>{const l={...b,lx:cx,ly:0};cx+=b.w+20;return l;});
+    let cx=0; layout = vis.map(b=>{const p=projectBoard(b,proj); const l={...b,lx:cx,ly:0,lw:p.lw,lh:p.lh};cx+=p.lw+20;return l;});
   }
 
+  // Compute AABB (accounting for rotation)
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
   for (const b of layout) {
-    minX=Math.min(minX,b.lx); minY=Math.min(minY,b.ly);
-    maxX=Math.max(maxX,b.lx+b.w); maxY=Math.max(maxY,b.ly+b.h);
+    const ang = b.angle || 0;
+    if (ang !== 0 && (proj === 'front' || proj === 'back')) {
+      // AABB for rotated board
+      const rad = ang * Math.PI / 180;
+      const cos = Math.cos(rad), sin = Math.sin(rad);
+      const corners = [
+        [b.lx, b.ly], [b.lx + b.lw*cos, b.ly + b.lw*sin],
+        [b.lx + b.lw*cos - b.lh*sin, b.ly + b.lw*sin + b.lh*cos],
+        [b.lx - b.lh*sin, b.ly + b.lh*cos]
+      ];
+      for (const c of corners) {
+        minX=Math.min(minX,c[0]); minY=Math.min(minY,c[1]);
+        maxX=Math.max(maxX,c[0]); maxY=Math.max(maxY,c[1]);
+      }
+    } else {
+      minX=Math.min(minX,b.lx); minY=Math.min(minY,b.ly);
+      maxX=Math.max(maxX,b.lx+b.lw); maxY=Math.max(maxY,b.ly+b.lh);
+    }
   }
 
   const PAD=70;
@@ -427,31 +293,62 @@ function render2DAssemble(boards) {
   for (let gx=0;gx<=W;gx+=40) svg.appendChild(svgEl('line',{x1:gx,y1:0,x2:gx,y2:H,stroke:'#1c2b3d','stroke-width':.5}));
   for (let gy=0;gy<=H;gy+=40) svg.appendChild(svgEl('line',{x1:0,y1:gy,x2:W,y2:gy,stroke:'#1c2b3d','stroke-width':.5}));
 
-  for (const b of layout) {
-    const bx=tx(b.lx),by=ty(b.ly+b.h),bw=b.w*scale,bh=b.h*scale;
-    svg.appendChild(svgEl('rect',{x:bx+3,y:by+3,width:bw,height:bh,fill:'#00000044',rx:2}));
-    svg.appendChild(svgEl('rect',{x:bx,y:by,width:bw,height:bh,fill:b.color,stroke:darken(b.color,.45),'stroke-width':1,rx:2}));
+  // Helper: draw a board (rect or polygon) with grain, labels, dims into parent element
+  function drawBoard(parent, b, ox, oy, bw, bh, dimParent, dimOx, dimOy) {
+    const cut = hasCuts(b);
+    if (cut) {
+      // Polygon (SVG Y is already flipped by caller via oy)
+      const pts = boardShape(b);
+      const scx = bw / b.w, sch = bh / b.h;
+      // Shadow polygon
+      const shadowPts = pts.map(p=>`${ox+p[0]*scx+3},${oy+(b.h-p[1])*sch+3}`).join(' ');
+      parent.appendChild(svgEl('polygon',{points:shadowPts,fill:'#00000044'}));
+      // Main polygon
+      const mainPts = pts.map(p=>`${ox+p[0]*scx},${oy+(b.h-p[1])*sch}`).join(' ');
+      parent.appendChild(svgEl('polygon',{points:mainPts,fill:b.color,stroke:darken(b.color,.45),'stroke-width':1}));
+    } else {
+      parent.appendChild(svgEl('rect',{x:ox+3,y:oy+3,width:bw,height:bh,fill:'#00000044',rx:2}));
+      parent.appendChild(svgEl('rect',{x:ox,y:oy,width:bw,height:bh,fill:b.color,stroke:darken(b.color,.45),'stroke-width':1,rx:2}));
+    }
     // grain
     const gc=Math.min(6,Math.floor(bw/25));
     for(let i=1;i<=gc;i++){
-      const gx=bx+(bw/(gc+1))*i;
-      svg.appendChild(svgEl('line',{x1:gx,y1:by+2,x2:gx,y2:by+bh-2,stroke:'#ffffff0f','stroke-width':.8}));
+      const gx=ox+(bw/(gc+1))*i;
+      parent.appendChild(svgEl('line',{x1:gx,y1:oy+2,x2:gx,y2:oy+bh-2,stroke:'#ffffff0f','stroke-width':.8}));
     }
     // text
     const fs=Math.max(8,Math.min(11,bw/Math.max(b.name.length,3)*1.3));
     if (bw>24&&bh>14) {
-      svg.appendChild(svgEl('text',{x:bx+bw/2,y:by+bh/2-(bh>28?fs*.45:0),fill:'#ffffffcc','text-anchor':'middle','dominant-baseline':'middle','font-size':fs,'font-family':'IBM Plex Sans,sans-serif','font-weight':'600'},b.name));
+      parent.appendChild(svgEl('text',{x:ox+bw/2,y:oy+bh/2-(bh>28?fs*.45:0),fill:'#ffffffcc','text-anchor':'middle','dominant-baseline':'middle','font-size':fs,'font-family':'IBM Plex Sans,sans-serif','font-weight':'600'},b.name));
     }
     if (bh>28&&bw>36) {
-      svg.appendChild(svgEl('text',{x:bx+bw/2,y:by+bh/2+fs*.85,fill:'#ffffff55','text-anchor':'middle','dominant-baseline':'middle','font-size':Math.max(7,fs-2.5),'font-family':'JetBrains Mono,monospace'},`[${b.id}]`));
+      parent.appendChild(svgEl('text',{x:ox+bw/2,y:oy+bh/2+fs*.85,fill:'#ffffff55','text-anchor':'middle','dominant-baseline':'middle','font-size':Math.max(7,fs-2.5),'font-family':'JetBrains Mono,monospace'},`[${b.id}]`));
     }
-    if (bw>28) drawDimH(svg,bx,bx+bw,by+bh+11,`${b.w}`);
-    if (bh>16) drawDimV(svg,bx-11,by,by+bh,`${b.h}`);
+    if (bw>28) drawDimH(dimParent,dimOx,dimOx+bw,dimOy+bh+11,`${b.lw}`);
+    if (bh>16) drawDimV(dimParent,dimOx-11,dimOy,dimOy+bh,`${b.lh}`);
+  }
+
+  for (const b of layout) {
+    const ang = b.angle || 0;
+    const rotated = ang !== 0 && (proj === 'front' || proj === 'back');
+    const bx=tx(b.lx), bw=b.lw*scale, bh=b.lh*scale;
+
+    if (rotated) {
+      const by=ty(b.ly);
+      const svgAng = -ang;
+      const g = svgEl('g',{transform:`rotate(${svgAng},${bx},${by})`});
+      drawBoard(g, b, bx, by, bw, bh, svg, bx, by);
+      svg.appendChild(g);
+    } else {
+      const byFlip=ty(b.ly+b.lh);
+      drawBoard(svg, b, bx, byFlip, bw, bh, svg, bx, byFlip);
+    }
   }
 
   // Axis labels
-  svg.appendChild(svgEl('text',{fill:'#4e6880','font-size':9,'font-family':'JetBrains Mono,monospace',x:W-10,y:H/2,'text-anchor':'end'},'→ X'));
-  svg.appendChild(svgEl('text',{fill:'#4e6880','font-size':9,'font-family':'JetBrains Mono,monospace',x:8,y:14},'↑ Y'));
+  const [axH,axV] = projAxisLabels(proj);
+  svg.appendChild(svgEl('text',{fill:'#4e6880','font-size':9,'font-family':'JetBrains Mono,monospace',x:W-10,y:H/2,'text-anchor':'end'},axH));
+  svg.appendChild(svgEl('text',{fill:'#4e6880','font-size':9,'font-family':'JetBrains Mono,monospace',x:8,y:14},axV));
 }
 
 function drawDimH(svg,x1,x2,y,lbl){
@@ -574,22 +471,31 @@ function renderListSVG(boards) {
     svg.appendChild(svgEl('text',{x:18,y:ry+18,fill:'#253547','font-size':10,'font-family':'JetBrains Mono,monospace',
       'font-weight':'600'},(i+1).toString().padStart(2,'0')));
 
-    // --- Scale board rect ---
-    const scaleX = availW / b.w;
-    const scaleH = availH / b.h;
+    // --- Scale board rect (uses view orientation) ---
+    const vd = listViewDims(b);
+    const scaleX = availW / vd.dw;
+    const scaleH = availH / vd.dh;
     const bscale = Math.min(scaleX, scaleH, 0.5); // cap at 0.5 (1px = 2mm)
 
-    const bw = b.w * bscale;
-    const bh = b.h * bscale;
+    const bw = vd.dw * bscale;
+    const bh = vd.dh * bscale;
 
     const bx = PAD_X + (availW - bw) / 2;
     const by = ry + (ROW_H - bh) / 2;
 
-    // Shadow
-    svg.appendChild(svgEl('rect',{x:bx+3,y:by+3,width:bw,height:bh,fill:'#00000044',rx:2}));
-    // Board
-    svg.appendChild(svgEl('rect',{x:bx,y:by,width:bw,height:bh,fill:b.color,stroke:darken(b.color,.4),'stroke-width':1,rx:2,
-      id:'card-'+b.id}));
+    // Shadow + Board (polygon for cuts, rect otherwise)
+    if (hasCuts(b) && (b.view||'f')==='f') {
+      const pts = boardShape(b);
+      const scx = bw / vd.dw, sch = bh / vd.dh;
+      const shadowPts = pts.map(p=>`${bx+p[0]*scx+3},${by+(b.h-p[1])*sch+3}`).join(' ');
+      svg.appendChild(svgEl('polygon',{points:shadowPts,fill:'#00000044'}));
+      const mainPts = pts.map(p=>`${bx+p[0]*scx},${by+(b.h-p[1])*sch}`).join(' ');
+      svg.appendChild(svgEl('polygon',{points:mainPts,fill:b.color,stroke:darken(b.color,.4),'stroke-width':1,id:'card-'+b.id}));
+    } else {
+      svg.appendChild(svgEl('rect',{x:bx+3,y:by+3,width:bw,height:bh,fill:'#00000044',rx:2}));
+      svg.appendChild(svgEl('rect',{x:bx,y:by,width:bw,height:bh,fill:b.color,stroke:darken(b.color,.4),'stroke-width':1,rx:2,
+        id:'card-'+b.id}));
+    }
     // Grain
     const gc=Math.min(7,Math.floor(bw/20));
     for(let g=1;g<=gc;g++){
@@ -602,7 +508,7 @@ function renderListSVG(boards) {
     svg.appendChild(svgEl('line',{x1:bx,y1:dimY,x2:bx+bw,y2:dimY,stroke:'#4a9cdc44','stroke-width':.8}));
     svg.appendChild(svgEl('line',{x1:bx,y1:dimY-3,x2:bx,y2:dimY+3,stroke:'#4a9cdc44','stroke-width':.8}));
     svg.appendChild(svgEl('line',{x1:bx+bw,y1:dimY-3,x2:bx+bw,y2:dimY+3,stroke:'#4a9cdc44','stroke-width':.8}));
-    svg.appendChild(svgEl('text',{x:bx+bw/2,y:dimY+10,fill:'#4a9cdc99','text-anchor':'middle','font-size':8.5,'font-family':'JetBrains Mono,monospace'},`${b.w} mm`));
+    svg.appendChild(svgEl('text',{x:bx+bw/2,y:dimY+10,fill:'#4a9cdc99','text-anchor':'middle','font-size':8.5,'font-family':'JetBrains Mono,monospace'},`${vd.dw} mm`));
 
     // Height dim (left)
     const dimX = bx - 10;
@@ -610,7 +516,7 @@ function renderListSVG(boards) {
     svg.appendChild(svgEl('line',{x1:dimX-3,y1:by,x2:dimX+3,y2:by,stroke:'#4a9cdc44','stroke-width':.8}));
     svg.appendChild(svgEl('line',{x1:dimX-3,y1:by+bh,x2:dimX+3,y2:by+bh,stroke:'#4a9cdc44','stroke-width':.8}));
     const midY=by+bh/2;
-    svg.appendChild(svgEl('text',{x:dimX-3,y:midY,fill:'#4a9cdc99','text-anchor':'middle','font-size':8.5,'font-family':'JetBrains Mono,monospace',transform:`rotate(-90,${dimX-3},${midY})`},`${b.h} mm`));
+    svg.appendChild(svgEl('text',{x:dimX-3,y:midY,fill:'#4a9cdc99','text-anchor':'middle','font-size':8.5,'font-family':'JetBrains Mono,monospace',transform:`rotate(-90,${dimX-3},${midY})`},`${vd.dh} mm`));
 
     // --- Info panel (right) ---
     const ix = bx + bw + 28;
@@ -623,13 +529,38 @@ function renderListSVG(boards) {
     svg.appendChild(svgEl('text',{x:ix,y:iy+38,fill:'#8fa8c0','font-size':10.5,'font-family':'JetBrains Mono,monospace'},`Š: ${b.w} mm`));
     svg.appendChild(svgEl('text',{x:ix,y:iy+54,fill:'#8fa8c0','font-size':10.5,'font-family':'JetBrains Mono,monospace'},`V: ${b.h} mm`));
     svg.appendChild(svgEl('text',{x:ix,y:iy+70,fill:'#8fa8c0','font-size':10.5,'font-family':'JetBrains Mono,monospace'},`H: ${b.d} mm`));
-    // Area
-    const area = (b.w * b.h / 1e6).toFixed(4);
+    // Area (based on viewed face)
+    const area = (vd.dw * vd.dh / 1e6).toFixed(4);
     svg.appendChild(svgEl('text',{x:ix,y:iy+88,fill:'#f0a02099','font-size':10,'font-family':'JetBrains Mono,monospace'},`${area} m²`));
+
+    // View indicator (if not default)
+    let infoY = iy + 106;
+    if (b.view && b.view !== 'f') {
+      const viewLabel = b.view === 's' ? 'pohled: bok' : 'pohled: shora';
+      svg.appendChild(svgEl('text',{x:ix,y:infoY,fill:'#8b6fe877','font-size':9.5,'font-family':'JetBrains Mono,monospace'},viewLabel));
+      infoY += 16;
+    }
+
+    // Cuts info
+    if (hasCuts(b)) {
+      const cutParts = [];
+      if (b.cuts.left!==null) cutParts.push(`L:${b.cuts.left}`);
+      if (b.cuts.right!==null) cutParts.push(`R:${b.cuts.right}`);
+      if (b.cuts.top!==null) cutParts.push(`T:${b.cuts.top}`);
+      if (b.cuts.bottom!==null) cutParts.push(`B:${b.cuts.bottom}`);
+      svg.appendChild(svgEl('text',{x:ix,y:infoY,fill:'#d9505077','font-size':9.5,'font-family':'JetBrains Mono,monospace'},`ořez: ${cutParts.join(' ')}`));
+      infoY += 16;
+    }
+
+    // Angle info
+    if (b.angle && b.angle !== 0) {
+      svg.appendChild(svgEl('text',{x:ix,y:infoY,fill:'#8b6fe877','font-size':9.5,'font-family':'JetBrains Mono,monospace'},`úhel: ${Math.round(b.angle*10)/10}°`));
+      infoY += 16;
+    }
 
     // Position (if set)
     if (b.hasPos) {
-      svg.appendChild(svgEl('text',{x:ix,y:iy+106,fill:'#38c46e77','font-size':9.5,'font-family':'JetBrains Mono,monospace'},`at (${b.x}, ${b.y}, ${b.z})`));
+      svg.appendChild(svgEl('text',{x:ix,y:infoY,fill:'#38c46e77','font-size':9.5,'font-family':'JetBrains Mono,monospace'},`at (${b.x}, ${b.y}, ${b.z})`));
     }
   }
 }
@@ -715,18 +646,64 @@ function render3D(boards){
     let bz=allPos?(b.z??0):0;
     if(!allPos) ax+=b.w+20;
 
-    const geo=new THREE.BoxGeometry(b.w,b.h,b.d);
+    const ang = b.angle || 0;
+    const hasCut = b.cuts && (b.cuts.left!==null||b.cuts.right!==null||b.cuts.top!==null||b.cuts.bottom!==null);
+
+    let geo, mesh;
     let col;
     try{col=new THREE.Color(b.color);}catch{col=new THREE.Color(0xb08050);}
-    const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
-    mesh.position.set(bx+b.w/2,by+b.h/2,bz+b.d/2);
+
+    if (hasCut) {
+      // Extruded shape for cut boards
+      const pts = boardShape(b);
+      const shape = new THREE.Shape();
+      shape.moveTo(pts[0][0]-b.w/2, pts[0][1]-b.h/2);
+      for (let i=1; i<pts.length; i++) shape.lineTo(pts[i][0]-b.w/2, pts[i][1]-b.h/2);
+      shape.closePath();
+      geo = new THREE.ExtrudeGeometry(shape, { depth: b.d, bevelEnabled: false });
+      mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:col}));
+      mesh.position.set(bx+b.w/2, by+b.h/2, bz);
+    } else {
+      geo = new THREE.BoxGeometry(b.w,b.h,b.d);
+      mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:col}));
+      mesh.position.set(bx+b.w/2, by+b.h/2, bz+b.d/2);
+    }
+
+    if (ang !== 0) {
+      // Rotate around origin point, not center
+      const rad = ang * Math.PI / 180;
+      const cos = Math.cos(rad), sin = Math.sin(rad);
+      // Pivot is at (bx, by) - offset center from pivot
+      const hw = b.w/2, hh = b.h/2;
+      const rcx = hw*cos - hh*sin;
+      const rcy = hw*sin + hh*cos;
+      mesh.position.set(bx + rcx, by + rcy, bz + (hasCut ? 0 : b.d/2));
+      mesh.rotation.z = rad;
+    }
+
     mesh.castShadow=true; mesh.receiveShadow=true;
     const edgeMat=new THREE.LineBasicMaterial({color:new THREE.Color(b.color).multiplyScalar(0.35),transparent:true,opacity:.85});
     mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),edgeMat));
     grp3.add(mesh);
 
-    cx+=bx+b.w/2; cy+=by+b.h/2; cz+=bz+b.d/2;
-    maxDim=Math.max(maxDim,bx+b.w,by+b.h,bz+b.d);
+    // AABB for camera bounds
+    if (ang !== 0) {
+      const rad2 = ang * Math.PI / 180;
+      const cos2 = Math.cos(rad2), sin2 = Math.sin(rad2);
+      const corners = [
+        [bx, by], [bx + b.w*cos2, by + b.w*sin2],
+        [bx + b.w*cos2 - b.h*sin2, by + b.w*sin2 + b.h*cos2],
+        [bx - b.h*sin2, by + b.h*cos2]
+      ];
+      const xs = corners.map(c=>c[0]), ys = corners.map(c=>c[1]);
+      cx+=(Math.min(...xs)+Math.max(...xs))/2;
+      cy+=(Math.min(...ys)+Math.max(...ys))/2;
+      cz+=bz+b.d/2;
+      maxDim=Math.max(maxDim,Math.max(...xs),Math.max(...ys),bz+b.d);
+    } else {
+      cx+=bx+b.w/2; cy+=by+b.h/2; cz+=bz+b.d/2;
+      maxDim=Math.max(maxDim,bx+b.w,by+b.h,bz+b.d);
+    }
   }
 
   const n=boards.length;
@@ -740,10 +717,12 @@ function render3D(boards){
 // ═══════════════════════════════════════════════════════
 let currentTab='2d';
 let current2DMode='assemble';
+let assembleProjection='front';
 let debTimer;
 
 function update(){
   const text=document.getElementById('code').value;
+  saveToHash(text);
   const {boards,errors,varCount}=parseDSL(text);
   window._lastBoards=boards;
 
@@ -797,12 +776,15 @@ document.querySelectorAll('.tab').forEach(tab=>{
 });
 
 // ── 2D SUB-TOOLBAR ──
+const projIds = ['proj-sep','proj-front','proj-back','proj-left','proj-right','proj-top','proj-bottom'];
+
 document.getElementById('btn-assemble').addEventListener('click',()=>{
   current2DMode='assemble';
   document.getElementById('btn-assemble').classList.add('active');
   document.getElementById('btn-list').classList.remove('active');
   document.getElementById('view-2d-assemble').style.display='block';
   document.getElementById('view-2d-list').style.display='none';
+  projIds.forEach(id=>{document.getElementById(id).style.display='';});
   ['sort-sep','sort-lbl','sort-name','sort-w','sort-h','sort-area'].forEach(id=>{
     document.getElementById(id).style.display='none';
   });
@@ -815,10 +797,21 @@ document.getElementById('btn-list').addEventListener('click',()=>{
   document.getElementById('btn-assemble').classList.remove('active');
   document.getElementById('view-2d-assemble').style.display='none';
   document.getElementById('view-2d-list').style.display='flex';
+  projIds.forEach(id=>{document.getElementById(id).style.display='none';});
   ['sort-sep','sort-lbl','sort-name','sort-w','sort-h','sort-area'].forEach(id=>{
     document.getElementById(id).style.display='';
   });
   update();
+});
+
+// Projection buttons
+['proj-front','proj-back','proj-left','proj-right','proj-top','proj-bottom'].forEach(btnId=>{
+  document.getElementById(btnId).addEventListener('click',()=>{
+    assembleProjection=document.getElementById(btnId).dataset.proj;
+    ['proj-front','proj-back','proj-left','proj-right','proj-top','proj-bottom'].forEach(id=>document.getElementById(id).classList.remove('active'));
+    document.getElementById(btnId).classList.add('active');
+    update();
+  });
 });
 
 // Sort buttons
@@ -856,7 +849,7 @@ window.addEventListener('resize',()=>{
 });
 
 // ── INIT ──
-document.getElementById('code').value=DEFAULT_CODE;
+document.getElementById('code').value=loadFromHash()||DEFAULT_CODE;
 document.getElementById('code').addEventListener('input',debouncedUpdate);
 update();
 </script>
