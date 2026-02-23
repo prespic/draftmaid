@@ -408,6 +408,93 @@ describe('Board parsing — basics', () => {
 });
 
 // ═══════════════════════════════════════════════════════
+//  8b. Board — multiline (indentation continuation)
+// ═══════════════════════════════════════════════════════
+describe('Board — multiline (indentation continuation)', () => {
+  it('indented lines join to previous board line', () => {
+    const { boards, errors } = parseDSL('board[a] 100 x 200 x 50 "Test"\n  at 10, 20, 30');
+    assert.equal(errors.length, 0);
+    assert.equal(boards[0].x, 10);
+    assert.equal(boards[0].y, 20);
+    assert.equal(boards[0].z, 30);
+  });
+
+  it('multiple continuation lines', () => {
+    const { boards, errors } = parseDSL(
+      'board[a] 100 x 200 x 50 "Test"\n  at 10, 20, 30\n  color #ff0000\n  view s'
+    );
+    assert.equal(errors.length, 0);
+    assert.equal(boards[0].x, 10);
+    assert.equal(boards[0].color, '#ff0000');
+    assert.equal(boards[0].view, 's');
+  });
+
+  it('tab indentation works', () => {
+    const { boards, errors } = parseDSL('board[a] 100 x 200 x 50 "Test"\n\tat 5, 6, 7');
+    assert.equal(errors.length, 0);
+    assert.equal(boards[0].x, 5);
+  });
+
+  it('comment line between board and continuation is not joined', () => {
+    const { boards, errors } = parseDSL(
+      'board[a] 100 x 200 x 50 "Test"\n# comment\n  at 10, 20, 30'
+    );
+    // The comment breaks the continuation, so "  at 10, 20, 30" is unknown command
+    assert.ok(errors.length > 0);
+  });
+
+  it('empty line between board and continuation breaks it', () => {
+    const { boards, errors } = parseDSL(
+      'board[a] 100 x 200 x 50 "Test"\n\n  at 10, 20, 30'
+    );
+    assert.ok(errors.length > 0);
+  });
+
+  it('non-indented line after board is separate command', () => {
+    const { boards, errors } = parseDSL(
+      'board[a] 100 x 200 x 50 "A"\nboard[b] 200 x 300 x 60 "B"'
+    );
+    assert.equal(errors.length, 0);
+    assert.equal(boards.length, 2);
+  });
+
+  it('indented line after variable is NOT continuation', () => {
+    const { errors } = parseDSL('$T = 18\n  board[a] 100 x 200 x 50 "Test"');
+    // Indented board line is NOT joined to variable — it starts fresh
+    // but it starts with spaces so it won't match /^board/... wait, trim happens after joining
+    // Actually: the indented line is not after a board, so it becomes its own line
+    // and after trim it matches /^board/
+    assert.equal(errors.length, 0);
+  });
+
+  it('multiline board with cut', () => {
+    const { boards, errors } = parseDSL(
+      'board[a] 100 x 200 x 50 "Test"\n  at 0, 0, 0\n  cut left 50 right 30'
+    );
+    assert.equal(errors.length, 0);
+    assert.deepEqual(boards[0].cuts, { left: 50, right: 30, top: null, bottom: null });
+  });
+
+  it('mixed single-line and multiline boards', () => {
+    const dsl = [
+      '$T = 18',
+      'board[a] 100 x 200 x 50 "A" at 0, 0, 0 color #aaa',
+      'board[b] 200 x 300 x 60 "B"',
+      '  at 10, 20, 30',
+      '  view ft',
+      'board[c] 50 x 50 x 50 "C"',
+    ].join('\n');
+    const { boards, errors } = parseDSL(dsl);
+    assert.equal(errors.length, 0);
+    assert.equal(boards.length, 3);
+    assert.equal(boards[0].color, '#aaa');
+    assert.equal(boards[1].x, 10);
+    assert.equal(boards[1].view, 'ft');
+    assert.equal(boards[2].view, null);
+  });
+});
+
+// ═══════════════════════════════════════════════════════
 //  9. Board — color
 // ═══════════════════════════════════════════════════════
 describe('Board — color', () => {
