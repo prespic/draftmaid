@@ -325,7 +325,7 @@ test.describe('View Orientation', () => {
     await page.locator('#btn-list').click();
     await page.waitForTimeout(400);
     const texts = await page.locator('#svg-list text').allTextContents();
-    expect(texts.some(t => t.includes('pohled: bok'))).toBe(true);
+    expect(texts.some(t => t.includes('pohled: boční'))).toBe(true);
   });
 });
 
@@ -723,5 +723,131 @@ test.describe('UI Interactions', () => {
     await page.waitForTimeout(400);
     const visible = await page.locator('#svg-list rect[id^="card-"]').count();
     expect(visible).toBe(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  12. RESIZE HANDLE
+// ═══════════════════════════════════════════════════════
+
+test.describe('Resize Handle', () => {
+  test('resize handle element exists', async ({ page }) => {
+    const handle = page.locator('#resize-handle');
+    await expect(handle).toBeVisible();
+  });
+
+  test('resize handle has col-resize cursor', async ({ page }) => {
+    const cursor = await page.locator('#resize-handle').evaluate(el => getComputedStyle(el).cursor);
+    expect(cursor).toBe('col-resize');
+  });
+
+  test('dragging handle changes editor width', async ({ page }) => {
+    const editor = page.locator('.editor-side');
+    const handle = page.locator('#resize-handle');
+    const initialWidth = await editor.evaluate(el => el.offsetWidth);
+
+    // Drag handle 100px to the right
+    const handleBox = await handle.boundingBox();
+    await page.mouse.move(handleBox.x + 3, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handleBox.x + 103, handleBox.y + handleBox.height / 2);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+
+    const newWidth = await editor.evaluate(el => el.offsetWidth);
+    expect(newWidth).toBeGreaterThan(initialWidth + 50);
+  });
+
+  test('editor width respects minimum 260px', async ({ page }) => {
+    const editor = page.locator('.editor-side');
+    const handle = page.locator('#resize-handle');
+
+    // Drag handle far to the left
+    const handleBox = await handle.boundingBox();
+    await page.mouse.move(handleBox.x + 3, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(50, handleBox.y + handleBox.height / 2);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+
+    const width = await editor.evaluate(el => el.offsetWidth);
+    expect(width).toBeGreaterThanOrEqual(260);
+  });
+
+  test('editor width persists to localStorage', async ({ page }) => {
+    const handle = page.locator('#resize-handle');
+
+    // Drag to change width
+    const handleBox = await handle.boundingBox();
+    await page.mouse.move(handleBox.x + 3, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handleBox.x + 53, handleBox.y + handleBox.height / 2);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+
+    const stored = await page.evaluate(() => localStorage.getItem('draftmaid-editor-width'));
+    expect(stored).not.toBeNull();
+    expect(Number(stored)).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  13. MULTI-VIEW RENDERING
+// ═══════════════════════════════════════════════════════
+
+test.describe('Multi-view Rendering', () => {
+  test('parser accepts view ft', async ({ page }) => {
+    const r = await parseDSL(page, 'board[a] 100 x 200 x 50 "A" view ft');
+    expect(r.errors).toHaveLength(0);
+    expect(r.boards[0].view).toBe('ft');
+  });
+
+  test('parser accepts view fst', async ({ page }) => {
+    const r = await parseDSL(page, 'board[a] 100 x 200 x 50 "A" view fst');
+    expect(r.errors).toHaveLength(0);
+    expect(r.boards[0].view).toBe('fst');
+  });
+
+  test('parser deduplicates: fft → ft', async ({ page }) => {
+    const r = await parseDSL(page, 'board[a] 100 x 200 x 50 "A" view fft');
+    expect(r.errors).toHaveLength(0);
+    expect(r.boards[0].view).toBe('ft');
+  });
+
+  test('list view renders multiple rects for multi-view board', async ({ page }) => {
+    await setCode(page, 'board[a] 100 x 200 x 50 "Multi" at 0,0,0 view ft');
+    await page.locator('#btn-list').click();
+    await page.waitForTimeout(400);
+    // Should have at least 2 colored rects (front + top) — one has id=card-a, other does not
+    // Count all colored rects (non-shadow, non-background)
+    const rects = await page.locator('#svg-list rect').count();
+    // Background + row bg + (shadow+rect)*2 = at least 6 rects
+    expect(rects).toBeGreaterThanOrEqual(6);
+  });
+
+  test('view labels shown for multi-view boards', async ({ page }) => {
+    await setCode(page, 'board[a] 100 x 200 x 50 "Multi" at 0,0,0 view ft');
+    await page.locator('#btn-list').click();
+    await page.waitForTimeout(400);
+    const texts = await page.locator('#svg-list text').allTextContents();
+    expect(texts.some(t => t === 'přední')).toBe(true);
+    expect(texts.some(t => t === 'shora')).toBe(true);
+  });
+
+  test('single view board has no view labels', async ({ page }) => {
+    await setCode(page, 'board[a] 100 x 200 x 50 "Single" at 0,0,0 view f');
+    await page.locator('#btn-list').click();
+    await page.waitForTimeout(400);
+    const texts = await page.locator('#svg-list text').allTextContents();
+    expect(texts.some(t => t === 'přední')).toBe(false);
+  });
+
+  test('listViewDimsMulti available in browser context', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      return listViewDimsMulti({ w: 100, h: 200, d: 50, view: 'ft' });
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0].view).toBe('f');
+    expect(result[1].view).toBe('t');
   });
 });

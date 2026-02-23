@@ -40,7 +40,9 @@
     .workspace{display:flex;flex:1;overflow:hidden;}
 
     /* ── EDITOR SIDE ── */
-    .editor-side{width:360px;min-width:260px;display:flex;flex-direction:column;background:var(--bg1);border-right:1px solid var(--line);flex-shrink:0;}
+    .editor-side{width:360px;min-width:260px;display:flex;flex-direction:column;background:var(--bg1);flex-shrink:0;}
+    .resize-handle{width:6px;cursor:col-resize;background:var(--line);flex-shrink:0;transition:background .15s;}
+    .resize-handle:hover,.resize-handle.dragging{background:var(--cyan);}
     .pane-label{height:32px;display:flex;align-items:center;padding:0 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--dim);border-bottom:1px solid var(--line);gap:7px;}
     .pane-label::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--cyan);opacity:.55;}
 
@@ -148,7 +150,7 @@
       <div class="syn-row">&nbsp;&nbsp; at <span class="v">X, Y, Z</span> &nbsp;<span class="c"># volitelné</span></div>
       <div class="syn-row">&nbsp;&nbsp; from <span class="v">X1,Y1</span> to <span class="v">X2,Y2</span> [z <span class="v">Z</span>]</div>
       <div class="syn-row">&nbsp;&nbsp; cut <span class="v">left V right V</span> &nbsp;<span class="c"># ořez</span></div>
-      <div class="syn-row">&nbsp;&nbsp; view <span class="v">f|s|t</span> &nbsp;<span class="c"># pohled v seznamu</span></div>
+      <div class="syn-row">&nbsp;&nbsp; view <span class="v">f|s|t|fs|ft|st|fst</span> &nbsp;<span class="c"># pohled(y)</span></div>
       <div class="syn-row">&nbsp;&nbsp; color <span class="v">#hex</span> &nbsp;<span class="c"># volitelné (automatické)</span></div>
       <div class="syn-row" style="margin-top:4px;"><span class="c"># Výrazy: $var, {id.top}, LEN(x1,y1,x2,y2)</span></div>
       <div class="syn-row"><span class="c"># Vlastnosti: .x .y .z .right .top .back .w .h .d .angle .x2 .y2</span></div>
@@ -159,6 +161,8 @@
       <span id="stat-vars"></span>
     </div>
   </div>
+
+  <div class="resize-handle" id="resize-handle"></div>
 
   <!-- ── PREVIEW ── -->
   <div class="preview-side">
@@ -452,10 +456,9 @@ function renderListSVG(boards) {
   const ROW_H = 140;
   const PAD_X = 80;
   const PAD_Y_TOP = 20;
-  const maxW = sorted.reduce((m,b)=>Math.max(m,b.w),0);
-  const maxH = sorted.reduce((m,b)=>Math.max(m,b.h),0);
+  const VIEW_GAP = 12;
 
-  // Available width for board rect
+  // Available width for board drawing area
   const availW = CW - PAD_X * 2 - 180; // 180 for info on right
   const availH = ROW_H - 36;
 
@@ -470,63 +473,99 @@ function renderListSVG(boards) {
     const isSelected = b.id === selectedBoardId;
 
     // Row bg
-    const rowBg = svgEl('rect',{x:8,y:ry,width:CW-16,height:ROW_H,fill:isSelected?'#0e1e2e':'#0b1520',rx:6,
-      stroke:isSelected?'#253547':'#111e2c','stroke-width':1});
-    svg.appendChild(rowBg);
+    svg.appendChild(svgEl('rect',{x:8,y:ry,width:CW-16,height:ROW_H,fill:isSelected?'#0e1e2e':'#0b1520',rx:6,
+      stroke:isSelected?'#253547':'#111e2c','stroke-width':1}));
 
     // Board number label
     svg.appendChild(svgEl('text',{x:18,y:ry+18,fill:'#253547','font-size':10,'font-family':'JetBrains Mono,monospace',
       'font-weight':'600'},(i+1).toString().padStart(2,'0')));
 
-    // --- Scale board rect (uses view orientation) ---
-    const vd = listViewDims(b);
-    const scaleX = availW / vd.dw;
-    const scaleH = availH / vd.dh;
-    const bscale = Math.min(scaleX, scaleH, 0.5); // cap at 0.5 (1px = 2mm)
+    // --- Multi-view: get views for this board ---
+    const views = listViewDimsMulti(b);
+    const isMulti = views.length > 1;
 
-    const bw = vd.dw * bscale;
-    const bh = vd.dh * bscale;
+    // Compute total natural width of all views (for proportional slot allocation)
+    const totalGaps = (views.length - 1) * VIEW_GAP;
+    const slotAvailW = availW - totalGaps;
 
-    const bx = PAD_X + (availW - bw) / 2;
-    const by = ry + (ROW_H - bh) / 2;
+    // Scale each view independently but within its proportional slot
+    const totalNatW = views.reduce((s, v) => s + v.dw, 0);
+    const viewLayouts = [];
+    let curX = PAD_X;
 
-    // Shadow + Board (polygon for cuts, rect otherwise)
-    if (hasCuts(b) && (b.view||'f')==='f') {
-      const pts = boardShape(b);
-      const scx = bw / vd.dw, sch = bh / vd.dh;
-      const shadowPts = pts.map(p=>`${bx+p[0]*scx+3},${by+(b.h-p[1])*sch+3}`).join(' ');
-      svg.appendChild(svgEl('polygon',{points:shadowPts,fill:'#00000044'}));
-      const mainPts = pts.map(p=>`${bx+p[0]*scx},${by+(b.h-p[1])*sch}`).join(' ');
-      svg.appendChild(svgEl('polygon',{points:mainPts,fill:b.color,stroke:darken(b.color,.4),'stroke-width':1,id:'card-'+b.id}));
-    } else {
-      svg.appendChild(svgEl('rect',{x:bx+3,y:by+3,width:bw,height:bh,fill:'#00000044',rx:2}));
-      svg.appendChild(svgEl('rect',{x:bx,y:by,width:bw,height:bh,fill:b.color,stroke:darken(b.color,.4),'stroke-width':1,rx:2,
-        id:'card-'+b.id}));
+    for (let vi = 0; vi < views.length; vi++) {
+      const vd = views[vi];
+      // Each view gets a proportional share of the available width
+      const slotW = (vd.dw / totalNatW) * slotAvailW;
+      const scaleX = slotW / vd.dw;
+      const scaleH = availH / vd.dh;
+      const bscale = Math.min(scaleX, scaleH, 0.5);
+
+      const bw = vd.dw * bscale;
+      const bh = vd.dh * bscale;
+
+      const bx = curX + (slotW - bw) / 2;
+      const by = ry + (ROW_H - bh) / 2;
+
+      viewLayouts.push({ vd, bx, by, bw, bh, slotX: curX, slotW });
+      curX += slotW + VIEW_GAP;
     }
-    // Grain
-    const gc=Math.min(7,Math.floor(bw/20));
-    for(let g=1;g<=gc;g++){
-      const gx=bx+(bw/(gc+1))*g;
-      svg.appendChild(svgEl('line',{x1:gx,y1:by+2,x2:gx,y2:by+bh-2,stroke:'#ffffff0e','stroke-width':.7}));
+
+    // Draw each view
+    for (let vi = 0; vi < views.length; vi++) {
+      const vd = views[vi];
+      const { bx, by, bw, bh } = viewLayouts[vi];
+      const isFirst = vi === 0;
+
+      // Shadow + Board (polygon for cuts only on front view)
+      if (hasCuts(b) && vd.view === 'f') {
+        const pts = boardShape(b);
+        const scx = bw / vd.dw, sch = bh / vd.dh;
+        const shadowPts = pts.map(p=>`${bx+p[0]*scx+3},${by+(b.h-p[1])*sch+3}`).join(' ');
+        svg.appendChild(svgEl('polygon',{points:shadowPts,fill:'#00000044'}));
+        const mainPts = pts.map(p=>`${bx+p[0]*scx},${by+(b.h-p[1])*sch}`).join(' ');
+        const attrs = {points:mainPts,fill:b.color,stroke:darken(b.color,.4),'stroke-width':1};
+        if (isFirst) attrs.id = 'card-'+b.id;
+        svg.appendChild(svgEl('polygon',attrs));
+      } else {
+        svg.appendChild(svgEl('rect',{x:bx+3,y:by+3,width:bw,height:bh,fill:'#00000044',rx:2}));
+        const attrs = {x:bx,y:by,width:bw,height:bh,fill:b.color,stroke:darken(b.color,.4),'stroke-width':1,rx:2};
+        if (isFirst) attrs.id = 'card-'+b.id;
+        svg.appendChild(svgEl('rect',attrs));
+      }
+
+      // Grain
+      const gc=Math.min(7,Math.floor(bw/20));
+      for(let g=1;g<=gc;g++){
+        const gx=bx+(bw/(gc+1))*g;
+        svg.appendChild(svgEl('line',{x1:gx,y1:by+2,x2:gx,y2:by+bh-2,stroke:'#ffffff0e','stroke-width':.7}));
+      }
+
+      // Width dim (below each view)
+      const dimY = by+bh+10;
+      svg.appendChild(svgEl('line',{x1:bx,y1:dimY,x2:bx+bw,y2:dimY,stroke:'#4a9cdc44','stroke-width':.8}));
+      svg.appendChild(svgEl('line',{x1:bx,y1:dimY-3,x2:bx,y2:dimY+3,stroke:'#4a9cdc44','stroke-width':.8}));
+      svg.appendChild(svgEl('line',{x1:bx+bw,y1:dimY-3,x2:bx+bw,y2:dimY+3,stroke:'#4a9cdc44','stroke-width':.8}));
+      svg.appendChild(svgEl('text',{x:bx+bw/2,y:dimY+10,fill:'#4a9cdc99','text-anchor':'middle','font-size':8.5,'font-family':'JetBrains Mono,monospace'},`${vd.dw} mm`));
+
+      // Height dim (left) — only on first view
+      if (isFirst) {
+        const dimX = bx - 10;
+        svg.appendChild(svgEl('line',{x1:dimX,y1:by,x2:dimX,y2:by+bh,stroke:'#4a9cdc44','stroke-width':.8}));
+        svg.appendChild(svgEl('line',{x1:dimX-3,y1:by,x2:dimX+3,y2:by,stroke:'#4a9cdc44','stroke-width':.8}));
+        svg.appendChild(svgEl('line',{x1:dimX-3,y1:by+bh,x2:dimX+3,y2:by+bh,stroke:'#4a9cdc44','stroke-width':.8}));
+        const midY=by+bh/2;
+        svg.appendChild(svgEl('text',{x:dimX-3,y:midY,fill:'#4a9cdc99','text-anchor':'middle','font-size':8.5,'font-family':'JetBrains Mono,monospace',transform:`rotate(-90,${dimX-3},${midY})`},`${vd.dh} mm`));
+      }
+
+      // View label (only in multi-view mode)
+      if (isMulti) {
+        svg.appendChild(svgEl('text',{x:bx+bw/2,y:by-6,fill:'#4e688099','text-anchor':'middle','font-size':8,'font-family':'JetBrains Mono,monospace','class':'view-label'},vd.label));
+      }
     }
 
-    // Width dim (below)
-    const dimY = by+bh+10;
-    svg.appendChild(svgEl('line',{x1:bx,y1:dimY,x2:bx+bw,y2:dimY,stroke:'#4a9cdc44','stroke-width':.8}));
-    svg.appendChild(svgEl('line',{x1:bx,y1:dimY-3,x2:bx,y2:dimY+3,stroke:'#4a9cdc44','stroke-width':.8}));
-    svg.appendChild(svgEl('line',{x1:bx+bw,y1:dimY-3,x2:bx+bw,y2:dimY+3,stroke:'#4a9cdc44','stroke-width':.8}));
-    svg.appendChild(svgEl('text',{x:bx+bw/2,y:dimY+10,fill:'#4a9cdc99','text-anchor':'middle','font-size':8.5,'font-family':'JetBrains Mono,monospace'},`${vd.dw} mm`));
-
-    // Height dim (left)
-    const dimX = bx - 10;
-    svg.appendChild(svgEl('line',{x1:dimX,y1:by,x2:dimX,y2:by+bh,stroke:'#4a9cdc44','stroke-width':.8}));
-    svg.appendChild(svgEl('line',{x1:dimX-3,y1:by,x2:dimX+3,y2:by,stroke:'#4a9cdc44','stroke-width':.8}));
-    svg.appendChild(svgEl('line',{x1:dimX-3,y1:by+bh,x2:dimX+3,y2:by+bh,stroke:'#4a9cdc44','stroke-width':.8}));
-    const midY=by+bh/2;
-    svg.appendChild(svgEl('text',{x:dimX-3,y:midY,fill:'#4a9cdc99','text-anchor':'middle','font-size':8.5,'font-family':'JetBrains Mono,monospace',transform:`rotate(-90,${dimX-3},${midY})`},`${vd.dh} mm`));
-
-    // --- Info panel (right) ---
-    const ix = bx + bw + 28;
+    // --- Info panel (right) at fixed position ---
+    const ix = CW - 180 + 8;
     const iy = ry + 22;
     // Name
     svg.appendChild(svgEl('text',{x:ix,y:iy,fill:'#c8d8e8','font-size':13,'font-family':'IBM Plex Sans,sans-serif','font-weight':'600'},b.name));
@@ -536,15 +575,16 @@ function renderListSVG(boards) {
     svg.appendChild(svgEl('text',{x:ix,y:iy+38,fill:'#8fa8c0','font-size':10.5,'font-family':'JetBrains Mono,monospace'},`Š: ${b.w} mm`));
     svg.appendChild(svgEl('text',{x:ix,y:iy+54,fill:'#8fa8c0','font-size':10.5,'font-family':'JetBrains Mono,monospace'},`V: ${b.h} mm`));
     svg.appendChild(svgEl('text',{x:ix,y:iy+70,fill:'#8fa8c0','font-size':10.5,'font-family':'JetBrains Mono,monospace'},`H: ${b.d} mm`));
-    // Area (based on viewed face)
-    const area = (vd.dw * vd.dh / 1e6).toFixed(4);
+    // Area (front face)
+    const vd0 = views[0];
+    const area = (vd0.dw * vd0.dh / 1e6).toFixed(4);
     svg.appendChild(svgEl('text',{x:ix,y:iy+88,fill:'#f0a02099','font-size':10,'font-family':'JetBrains Mono,monospace'},`${area} m²`));
 
-    // View indicator (if not default)
+    // View indicator (if not default single front)
     let infoY = iy + 106;
     if (b.view && b.view !== 'f') {
-      const viewLabel = b.view === 's' ? 'pohled: bok' : 'pohled: shora';
-      svg.appendChild(svgEl('text',{x:ix,y:infoY,fill:'#8b6fe877','font-size':9.5,'font-family':'JetBrains Mono,monospace'},viewLabel));
+      const viewLabels = [...b.view].map(ch => VIEW_LABELS[ch] || ch).join(' + ');
+      svg.appendChild(svgEl('text',{x:ix,y:infoY,fill:'#8b6fe877','font-size':9.5,'font-family':'JetBrains Mono,monospace'},`pohled: ${viewLabels}`));
       infoY += 16;
     }
 
@@ -872,6 +912,50 @@ exSelect.addEventListener('change', () => {
 document.getElementById('code').addEventListener('input', () => {
   exSelect.value = '';
 });
+
+// ── RESIZABLE PANELS ──
+(function(){
+  const MIN_EDITOR = 260;
+  const MIN_PREVIEW = 300;
+  const handle = document.getElementById('resize-handle');
+  const editor = document.querySelector('.editor-side');
+  let dragging = false;
+
+  function applyWidth(w) {
+    const maxW = window.innerWidth - MIN_PREVIEW - handle.offsetWidth;
+    const clamped = Math.max(MIN_EDITOR, Math.min(w, maxW));
+    editor.style.width = clamped + 'px';
+  }
+
+  handle.addEventListener('mousedown', (e) => {
+    dragging = true;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    applyWidth(e.clientX - editor.getBoundingClientRect().left);
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    try { localStorage.setItem('draftmaid-editor-width', editor.offsetWidth); } catch(e) {}
+    window.dispatchEvent(new Event('resize'));
+  });
+
+  // Restore saved width on load
+  try {
+    const saved = localStorage.getItem('draftmaid-editor-width');
+    if (saved) applyWidth(Number(saved));
+  } catch(e) {}
+})();
 
 // ── INIT ──
 document.getElementById('code').value=loadFromHash()||DEFAULT_CODE;

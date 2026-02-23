@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   DEFAULT_CODE, EXAMPLES, AUTO_COLORS, DSLParser, parseDSL,
   darken, boardCount, hasCuts, boardShape, listViewDims,
+  VIEW_LABELS, autoDetectViews, listViewDimsMulti,
   encodeHash, decodeHash, projectBoard, projAxisLabels,
 } = require('../lib/engine.js');
 
@@ -803,5 +804,146 @@ describe('projAxisLabels()', () => {
   it('top/bottom → X, Z', () => {
     assert.deepEqual(projAxisLabels('top'), ['\u2192 X', '\u2191 Z']);
     assert.deepEqual(projAxisLabels('bottom'), ['\u2192 X', '\u2191 Z']);
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  23. Multi-view parser
+// ═══════════════════════════════════════════════════════
+describe('Multi-view parser', () => {
+  it('view ft → "ft"', () => {
+    const { boards } = parseDSL('board[a] 100 x 200 x 50 "A" view ft');
+    assert.equal(boards[0].view, 'ft');
+  });
+
+  it('view fst → "fst"', () => {
+    const { boards } = parseDSL('board[a] 100 x 200 x 50 "A" view fst');
+    assert.equal(boards[0].view, 'fst');
+  });
+
+  it('preserves order: sf → "sf"', () => {
+    const { boards } = parseDSL('board[a] 100 x 200 x 50 "A" view sf');
+    assert.equal(boards[0].view, 'sf');
+  });
+
+  it('deduplicates: fft → "ft"', () => {
+    const { boards } = parseDSL('board[a] 100 x 200 x 50 "A" view fft');
+    assert.equal(boards[0].view, 'ft');
+  });
+
+  it('invalid char in multi-view → error', () => {
+    const { errors } = parseDSL('board[a] 100 x 200 x 50 "A" view fx');
+    assert.ok(errors.length > 0);
+    assert.ok(errors.some(e => e.includes("Neplatný pohled 'x'")));
+  });
+
+  it('multi-view + color works', () => {
+    const { boards, errors } = parseDSL('board[a] 100 x 200 x 50 "A" view ft color #ff0000');
+    assert.equal(errors.length, 0);
+    assert.equal(boards[0].view, 'ft');
+    assert.equal(boards[0].color, '#ff0000');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  24. listViewDimsMulti()
+// ═══════════════════════════════════════════════════════
+describe('listViewDimsMulti()', () => {
+  const b = { w: 100, h: 200, d: 50 };
+
+  it('single "f" → 1 element with front dims', () => {
+    const result = listViewDimsMulti({ ...b, view: 'f' });
+    assert.equal(result.length, 1);
+    assert.deepEqual({ dw: result[0].dw, dh: result[0].dh }, { dw: 100, dh: 200 });
+    assert.equal(result[0].view, 'f');
+  });
+
+  it('"ft" → 2 elements with correct dims', () => {
+    const result = listViewDimsMulti({ ...b, view: 'ft' });
+    assert.equal(result.length, 2);
+    assert.deepEqual({ dw: result[0].dw, dh: result[0].dh }, { dw: 100, dh: 200 }); // front
+    assert.deepEqual({ dw: result[1].dw, dh: result[1].dh }, { dw: 100, dh: 50 });  // top
+  });
+
+  it('"fst" → 3 elements', () => {
+    const result = listViewDimsMulti({ ...b, view: 'fst' });
+    assert.equal(result.length, 3);
+    assert.equal(result[0].view, 'f');
+    assert.equal(result[1].view, 's');
+    assert.equal(result[2].view, 't');
+  });
+
+  it('includes Czech labels', () => {
+    const result = listViewDimsMulti({ ...b, view: 'fst' });
+    assert.equal(result[0].label, 'přední');
+    assert.equal(result[1].label, 'boční');
+    assert.equal(result[2].label, 'shora');
+  });
+
+  it('side view: dw=d, dh=h', () => {
+    const result = listViewDimsMulti({ ...b, view: 's' });
+    assert.equal(result[0].dw, 50);
+    assert.equal(result[0].dh, 200);
+  });
+
+  it('top view: dw=w, dh=d', () => {
+    const result = listViewDimsMulti({ ...b, view: 't' });
+    assert.equal(result[0].dw, 100);
+    assert.equal(result[0].dh, 50);
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  25. autoDetectViews()
+// ═══════════════════════════════════════════════════════
+describe('autoDetectViews()', () => {
+  it('panel 800×18×400 → "tf" (top+front largest)', () => {
+    const result = autoDetectViews({ w: 800, h: 18, d: 400 });
+    assert.equal(result, 'tf');
+  });
+
+  it('hranol 50×60×2000 → "st" (side+top largest)', () => {
+    const result = autoDetectViews({ w: 50, h: 60, d: 2000 });
+    // side: 2000*60=120000, top: 50*2000=100000, front: 50*60=3000
+    assert.equal(result, 'st');
+  });
+
+  it('cube 100×100×100 → "fs" (all equal, stable sort keeps order)', () => {
+    const result = autoDetectViews({ w: 100, h: 100, d: 100 });
+    // All areas equal (10000), sort is stable so f comes first, then s
+    assert.equal(result.length, 2);
+    assert.ok('fst'.includes(result[0]));
+    assert.ok('fst'.includes(result[1]));
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  26. listViewDimsMulti() with auto-detect
+// ═══════════════════════════════════════════════════════
+describe('listViewDimsMulti() with auto-detect', () => {
+  it('without view → returns 2 elements from auto-detect', () => {
+    const result = listViewDimsMulti({ w: 800, h: 18, d: 400 });
+    assert.equal(result.length, 2);
+  });
+
+  it('with explicit view → uses that view', () => {
+    const result = listViewDimsMulti({ w: 800, h: 18, d: 400, view: 'f' });
+    assert.equal(result.length, 1);
+    assert.equal(result[0].view, 'f');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  27. listViewDims() backward compatibility
+// ═══════════════════════════════════════════════════════
+describe('listViewDims() backward compat with multi-view', () => {
+  const b = { w: 100, h: 200, d: 50 };
+
+  it('"ft" → returns front dimensions (first char)', () => {
+    assert.deepEqual(listViewDims({ ...b, view: 'ft' }), { dw: 100, dh: 200 });
+  });
+
+  it('"st" → returns side dimensions (first char)', () => {
+    assert.deepEqual(listViewDims({ ...b, view: 'st' }), { dw: 50, dh: 200 });
   });
 });
