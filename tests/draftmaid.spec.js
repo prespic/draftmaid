@@ -289,9 +289,9 @@ test.describe('View Orientation', () => {
     }
   });
 
-  test('default view is f', async ({ page }) => {
+  test('default view is null (auto-detect)', async ({ page }) => {
     const r = await parseDSL(page, 'board[a] 100 x 200 x 50 "A"');
-    expect(r.boards[0].view).toBe('f');
+    expect(r.boards[0].view).toBeNull();
   });
 
   test('invalid view letter produces error', async ({ page }) => {

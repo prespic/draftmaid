@@ -551,9 +551,9 @@ describe('Board — view', () => {
     assert.equal(boards[0].view, 't');
   });
 
-  it('default view = f', () => {
+  it('default view = null (auto-detect)', () => {
     const { boards } = parseDSL('board[a] 100 x 200 x 50 "Test"');
-    assert.equal(boards[0].view, 'f');
+    assert.equal(boards[0].view, null);
   });
 
   it('invalid view x → error', () => {
