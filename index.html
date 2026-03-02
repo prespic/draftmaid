@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DraftMaid v0.2</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
   <script src="lib/engine.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -63,7 +64,7 @@
     #stat-boards{color:var(--green);font-weight:600;}
 
     /* ── PREVIEW SIDE ── */
-    .preview-side{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
+    .preview-side{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;position:relative;}
 
     .tabs{height:32px;background:var(--bg1);border-bottom:1px solid var(--line);display:flex;flex-shrink:0;}
     .tab{display:flex;align-items:center;gap:6px;padding:0 18px;font-size:11px;font-weight:600;cursor:pointer;color:var(--dim);border-bottom:2px solid transparent;transition:all .15s;user-select:none;letter-spacing:.2px;}
@@ -109,6 +110,11 @@
     .board-toggle.on{background:var(--cyan);border-color:var(--cyan);}
     .board-toggle.on::after{content:'✓';font-size:9px;color:#000;}
 
+    .group-header{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg2);border-radius:5px;margin-bottom:2px;cursor:pointer;}
+    .group-name{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--dim2);flex:1;}
+    .group-chevron{font-size:8px;color:var(--dim);width:12px;text-align:center;}
+    .board-item.indented{padding-left:24px;}
+
     /* Main list canvas */
     .list-canvas{flex:1;overflow:auto;background:var(--bg0);}
     #svg-list{display:block;}
@@ -119,7 +125,56 @@
     #canvas3d:active{cursor:grabbing;}
     .hint-3d{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--dim);background:#07111acc;backdrop-filter:blur(4px);padding:4px 14px;border-radius:20px;border:1px solid var(--line);pointer-events:none;white-space:nowrap;}
 
+    /* ── 3D SIDEBAR ── */
+    .ctrl-sidebar{width:220px;background:var(--bg1);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0;}
+    .ctrl-section{border-bottom:1px solid var(--line);padding:10px 12px;}
+    .ctrl-section-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px;}
+    .ctrl-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+    .ctrl-slider{-webkit-appearance:none;appearance:none;flex:1;height:4px;background:var(--bg3);border-radius:2px;outline:none;cursor:pointer;}
+    .ctrl-slider::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--cyan);cursor:pointer;}
+    .ctrl-slider::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--cyan);border:none;cursor:pointer;}
+    .ctrl-slider:disabled{opacity:.3;cursor:default;}
+    .ctrl-value{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim2);width:32px;text-align:right;flex-shrink:0;}
+    .ctrl-toggle{width:14px;height:14px;border-radius:3px;border:1px solid var(--line2);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s;font-size:9px;color:transparent;}
+    .ctrl-toggle.on{background:var(--cyan);border-color:var(--cyan);color:#000;}
+    .ctrl-group-item{display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+    .ctrl-group-name{font-size:10.5px;color:var(--text);cursor:pointer;flex-shrink:0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px;transition:opacity .15s;}
+    .ctrl-group-name.dimmed{text-decoration:line-through;opacity:.4;}
+    .ctrl-color-swatch{width:9px;height:9px;border-radius:2px;flex-shrink:0;}
+
     .error-bar{display:none;background:#150a0a;border-top:1px solid #3d1010;color:#e08080;padding:5px 14px;font-size:10.5px;font-family:'JetBrains Mono',monospace;flex-shrink:0;}
+
+    /* ── EDIT PANEL ── */
+    .edit-panel{position:absolute;right:0;top:0;bottom:0;width:280px;background:var(--bg1);border-left:1px solid var(--line);z-index:100;overflow-y:auto;display:none;flex-direction:column;}
+    .edit-panel.open{display:flex;}
+    .edit-header{height:36px;display:flex;align-items:center;padding:0 12px;font-size:11px;font-weight:600;color:var(--cyan);border-bottom:1px solid var(--line);flex-shrink:0;gap:8px;}
+    .edit-header button{margin-left:auto;background:none;border:none;color:var(--dim);font-size:16px;cursor:pointer;padding:0 4px;}
+    .edit-header button:hover{color:var(--text);}
+    .edit-body{padding:12px;display:flex;flex-direction:column;gap:10px;}
+    .edit-field{display:flex;flex-direction:column;gap:3px;}
+    .edit-field label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);}
+    .edit-field input[type="text"],.edit-field input[type="number"]{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);background:var(--bg3);border:1px solid var(--line);border-radius:3px;padding:4px 8px;outline:none;}
+    .edit-field input:focus{border-color:var(--cyan);}
+    .edit-field input[type="color"]{width:32px;height:24px;border:1px solid var(--line);border-radius:3px;background:var(--bg3);cursor:pointer;padding:1px;}
+    .edit-row{display:flex;gap:6px;}
+    .edit-row .edit-field{flex:1;}
+    .edit-warn{font-size:9px;color:var(--amber);background:#201800;border:1px solid #302000;border-radius:3px;padding:4px 8px;line-height:1.4;}
+    .edit-apply{font-family:'IBM Plex Sans',sans-serif;font-size:11px;font-weight:600;color:#000;background:var(--cyan);border:none;border-radius:4px;padding:6px 14px;cursor:pointer;transition:opacity .15s;}
+    .edit-apply:hover{opacity:.85;}
+
+    /* ── SNAPSHOT BAR ── */
+    .snap-btn{font-family:'IBM Plex Sans',sans-serif;font-size:10px;font-weight:600;color:var(--text);background:var(--bg3);border:1px solid var(--line);border-radius:3px;padding:3px 10px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:4px;}
+    .snap-btn:hover{border-color:var(--cyan);color:var(--cyan);}
+    .snap-badge{font-size:8px;background:var(--cyan);color:#000;border-radius:8px;padding:0 5px;font-weight:700;min-width:14px;text-align:center;}
+    .snap-bar{height:0;background:var(--bg1);border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0;overflow-x:auto;flex-shrink:0;transition:height .2s;}
+    .snap-bar.open{height:72px;padding:0 12px;}
+    .snap-thumb{width:80px;height:54px;border-radius:4px;border:1px solid var(--line);cursor:pointer;object-fit:cover;flex-shrink:0;transition:border-color .15s;}
+    .snap-thumb:hover{border-color:var(--cyan);}
+    .snap-thumb-wrap{position:relative;flex-shrink:0;}
+    .snap-remove{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:10px;line-height:16px;text-align:center;display:none;}
+    .snap-thumb-wrap:hover .snap-remove{display:block;}
+    .snap-export{font-family:'IBM Plex Sans',sans-serif;font-size:10px;font-weight:600;color:#000;background:var(--amber);border:none;border-radius:3px;padding:5px 12px;cursor:pointer;flex-shrink:0;margin-left:auto;}
+    .snap-export:hover{opacity:.85;}
   </style>
 </head>
 <body>
@@ -135,6 +190,7 @@
     <span class="hdr-stat">Plocha: <b id="hdr-area">—</b></span>
     <span class="hdr-stat">Proměnné: <b id="hdr-vars">0</b></span>
   </div>
+  <button class="snap-btn" id="snap-capture">Vyfotit <span class="snap-badge" id="snap-count" style="display:none;">0</span></button>
 </header>
 
 <div class="workspace">
@@ -152,6 +208,7 @@
       <div class="syn-row">&nbsp;&nbsp; cut <span class="v">left V right V</span> &nbsp;<span class="c"># ořez</span></div>
       <div class="syn-row">&nbsp;&nbsp; view <span class="v">f|s|t|fs|ft|st|fst</span> &nbsp;<span class="c"># pohled(y)</span></div>
       <div class="syn-row">&nbsp;&nbsp; color <span class="v">#hex</span> &nbsp;<span class="c"># volitelné (automatické)</span></div>
+      <div class="syn-row"><span class="k">group</span> <span class="k">"název"</span> <span class="c"># skupina desek</span></div>
       <div class="syn-row" style="margin-top:4px;"><span class="c"># Výrazy: $var, {id.top}, LEN(x1,y1,x2,y2)</span></div>
       <div class="syn-row"><span class="c"># Vlastnosti: .x .y .z .right .top .back .w .h .d .angle .x2 .y2</span></div>
     </div>
@@ -168,36 +225,65 @@
   <div class="preview-side">
     <div class="tabs">
       <div class="tab active" data-tab="2d">◫ &nbsp;2D pohled</div>
+      <div class="tab" data-tab="list">≡ &nbsp;Seznam desek</div>
       <div class="tab" data-tab="3d">◈ &nbsp;3D náhled</div>
     </div>
 
-    <!-- 2D view container -->
+    <!-- 2D assembled view -->
     <div class="view active" id="view-2d">
       <div class="sub-toolbar">
-        <button class="view-btn active" id="btn-assemble">⬛ Sestaveno</button>
-        <button class="view-btn" id="btn-list">≡ Seznam desek</button>
-        <div class="sub-sep" id="proj-sep"></div>
         <button class="sort-btn active" id="proj-front" data-proj="front">Přední</button>
         <button class="sort-btn" id="proj-back" data-proj="back">Zadní</button>
         <button class="sort-btn" id="proj-left" data-proj="left">Levý</button>
         <button class="sort-btn" id="proj-right" data-proj="right">Pravý</button>
         <button class="sort-btn" id="proj-top" data-proj="top">Horní</button>
         <button class="sort-btn" id="proj-bottom" data-proj="bottom">Spodní</button>
-        <div class="sub-sep" id="sort-sep" style="display:none;"></div>
-        <span class="sort-label" id="sort-lbl" style="display:none;">Řadit:</span>
-        <button class="sort-btn active" id="sort-name" style="display:none;" data-sort="name">Název</button>
-        <button class="sort-btn" id="sort-w" style="display:none;" data-sort="w">Šířka ↓</button>
-        <button class="sort-btn" id="sort-h" style="display:none;" data-sort="h">Výška ↓</button>
-        <button class="sort-btn" id="sort-area" style="display:none;" data-sort="area">Plocha ↓</button>
       </div>
-
-      <!-- Assembled -->
-      <div id="view-2d-assemble" class="active" style="display:block;flex:1;overflow:hidden;">
-        <svg id="svg2d" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div style="flex:1;display:flex;overflow:hidden;">
+        <div class="ctrl-sidebar" id="sidebar-2d">
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Skupiny</div>
+            <div id="ctrl-groups-2d"></div>
+          </div>
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Ořez</div>
+            <div class="ctrl-row">
+              <button class="ctrl-toggle" id="clip2d-h-toggle">✓</button>
+              <span style="font-size:10px;color:var(--dim2);width:14px;">H</span>
+              <input type="range" class="ctrl-slider" id="clip2d-h-slider" min="0" max="100" value="100" disabled>
+              <span class="ctrl-value" id="clip2d-h-val">—</span>
+            </div>
+            <div class="ctrl-row">
+              <button class="ctrl-toggle" id="clip2d-v-toggle">✓</button>
+              <span style="font-size:10px;color:var(--dim2);width:14px;">V</span>
+              <input type="range" class="ctrl-slider" id="clip2d-v-slider" min="0" max="100" value="100" disabled>
+              <span class="ctrl-value" id="clip2d-v-val">—</span>
+            </div>
+          </div>
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Rozpad</div>
+            <div class="ctrl-row">
+              <input type="range" class="ctrl-slider" id="explode2d-slider" min="0" max="100" value="0">
+              <span class="ctrl-value" id="explode2d-val">0%</span>
+            </div>
+          </div>
+        </div>
+        <div id="view-2d-assemble" style="flex:1;overflow:hidden;">
+          <svg id="svg2d" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
       </div>
+    </div>
 
-      <!-- List -->
-      <div id="view-2d-list" style="display:none;flex:1;">
+    <!-- List view -->
+    <div class="view" id="view-list">
+      <div class="sub-toolbar">
+        <span class="sort-label">Řadit:</span>
+        <button class="sort-btn active" id="sort-name" data-sort="name">Název</button>
+        <button class="sort-btn" id="sort-w" data-sort="w">Šířka ↓</button>
+        <button class="sort-btn" id="sort-h" data-sort="h">Výška ↓</button>
+        <button class="sort-btn" id="sort-area" data-sort="area">Plocha ↓</button>
+      </div>
+      <div id="view-list-content" style="flex:1;display:flex;overflow:hidden;">
         <div class="list-sidebar">
           <div class="sidebar-header">
             Desky
@@ -215,9 +301,78 @@
     </div>
 
     <!-- 3D view -->
-    <div class="view" id="view-3d">
-      <canvas id="canvas3d"></canvas>
-      <div class="hint-3d">🖱 Tažením rotuj · Kolečkem přibliž</div>
+    <div class="view" id="view-3d" style="flex-direction:row;">
+      <div class="sidebar-3d" id="sidebar-3d">
+        <!-- Skupiny -->
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Skupiny</div>
+          <div id="ctrl-groups-3d"></div>
+        </div>
+        <!-- Řezné roviny -->
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Řezné roviny</div>
+          <div class="ctrl-row">
+            <button class="ctrl-toggle" id="clip-x-toggle">✓</button>
+            <span style="font-size:10px;color:var(--dim2);width:14px;">X</span>
+            <input type="range" class="ctrl-slider" id="clip-x-slider" min="0" max="100" value="100" disabled>
+            <span class="ctrl-value" id="clip-x-val">—</span>
+          </div>
+          <div class="ctrl-row">
+            <button class="ctrl-toggle" id="clip-y-toggle">✓</button>
+            <span style="font-size:10px;color:var(--dim2);width:14px;">Y</span>
+            <input type="range" class="ctrl-slider" id="clip-y-slider" min="0" max="100" value="100" disabled>
+            <span class="ctrl-value" id="clip-y-val">—</span>
+          </div>
+          <div class="ctrl-row">
+            <button class="ctrl-toggle" id="clip-z-toggle">✓</button>
+            <span style="font-size:10px;color:var(--dim2);width:14px;">Z</span>
+            <input type="range" class="ctrl-slider" id="clip-z-slider" min="0" max="100" value="100" disabled>
+            <span class="ctrl-value" id="clip-z-val">—</span>
+          </div>
+        </div>
+        <!-- Rozpad -->
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Rozpad</div>
+          <div class="ctrl-row">
+            <input type="range" class="ctrl-slider" id="explode-slider" min="0" max="100" value="0">
+            <span class="ctrl-value" id="explode-val">0%</span>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;position:relative;overflow:hidden;">
+        <canvas id="canvas3d"></canvas>
+        <div class="hint-3d">🖱 Tažením rotuj · Kolečkem přibliž</div>
+      </div>
+    </div>
+
+    <!-- Snapshot bar -->
+    <div class="snap-bar" id="snap-bar"></div>
+
+    <!-- Edit panel -->
+    <div class="edit-panel" id="edit-panel">
+      <div class="edit-header">Upravit desku <button id="edit-close">&times;</button></div>
+      <div class="edit-body">
+        <div class="edit-field">
+          <label>Název</label>
+          <input type="text" id="edit-name">
+        </div>
+        <div class="edit-row">
+          <div class="edit-field"><label>Šířka</label><input type="number" id="edit-w"></div>
+          <div class="edit-field"><label>Výška</label><input type="number" id="edit-h"></div>
+          <div class="edit-field"><label>Hloubka</label><input type="number" id="edit-d"></div>
+        </div>
+        <div class="edit-row">
+          <div class="edit-field"><label>X</label><input type="number" id="edit-x"></div>
+          <div class="edit-field"><label>Y</label><input type="number" id="edit-y"></div>
+          <div class="edit-field"><label>Z</label><input type="number" id="edit-z"></div>
+        </div>
+        <div class="edit-row">
+          <div class="edit-field"><label>Barva</label><input type="color" id="edit-color"></div>
+          <div class="edit-field"><label>Pohled</label><input type="text" id="edit-view" placeholder="f, s, t, fs..."></div>
+        </div>
+        <div class="edit-warn">Editace nahradí výrazy ($W, {id.top}) za vypočtené hodnoty.</div>
+        <button class="edit-apply" id="edit-apply">Uložit</button>
+      </div>
     </div>
 
     <div class="error-bar" id="error-bar"></div>
@@ -257,7 +412,13 @@ function render2DAssemble(boards) {
     return;
   }
 
-  const vis = boards.filter(b=>b.visible!==false);
+  // Filter by visibility and 2D group opacity
+  const vis = boards.filter(b => {
+    if (b.visible === false) return false;
+    const gKey = b.group || null;
+    const opacity = groupState2D[gKey]?.opacity ?? 1.0;
+    return opacity > 0;
+  });
   if (!vis.length) return;
 
   const proj = assembleProjection;
@@ -267,6 +428,21 @@ function render2DAssemble(boards) {
     layout = vis.map(b=>{const p=projectBoard(b,proj); return {...b,...p};});
   } else {
     let cx=0; layout = vis.map(b=>{const p=projectBoard(b,proj); const l={...b,lx:cx,ly:0,lw:p.lw,lh:p.lh};cx+=p.lw+20;return l;});
+  }
+
+  // Depth sort — correct layer order for projection
+  depthSort(layout, proj);
+
+  // Explode — push boards away from center
+  if (explodeFactor2D > 0) {
+    let clx = 0, cly = 0;
+    for (const b of layout) { clx += b.lx + b.lw / 2; cly += b.ly + b.lh / 2; }
+    clx /= layout.length; cly /= layout.length;
+    for (const b of layout) {
+      const bcx = b.lx + b.lw / 2, bcy = b.ly + b.lh / 2;
+      b.lx += (bcx - clx) * explodeFactor2D * 2;
+      b.ly += (bcy - cly) * explodeFactor2D * 2;
+    }
   }
 
   // Compute AABB (accounting for rotation)
@@ -304,22 +480,43 @@ function render2DAssemble(boards) {
   for (let gx=0;gx<=W;gx+=40) svg.appendChild(svgEl('line',{x1:gx,y1:0,x2:gx,y2:H,stroke:'#1c2b3d','stroke-width':.5}));
   for (let gy=0;gy<=H;gy+=40) svg.appendChild(svgEl('line',{x1:0,y1:gy,x2:W,y2:gy,stroke:'#1c2b3d','stroke-width':.5}));
 
+  // Clip path for H/V clipping
+  let clipGroup = svg;
+  if (clipEnabled2D[0] || clipEnabled2D[1]) {
+    const defs = svgEl('defs');
+    const cp = svgEl('clipPath', { id: 'clip2d' });
+    const clipX = clipEnabled2D[0] ? tx(minX + (maxX - minX) * clipSliderVal2D[0] / 100) : W;
+    const clipY = clipEnabled2D[1] ? ty(minY + (maxY - minY) * clipSliderVal2D[1] / 100) : 0;
+    cp.appendChild(svgEl('rect', { x: 0, y: clipY, width: clipX, height: H - clipY }));
+    defs.appendChild(cp);
+    svg.appendChild(defs);
+    clipGroup = svgEl('g', { 'clip-path': 'url(#clip2d)' });
+    svg.appendChild(clipGroup);
+
+    // Update clip value display
+    if (clipEnabled2D[0]) {
+      document.getElementById('clip2d-h-val').textContent = Math.round(minX + (maxX - minX) * clipSliderVal2D[0] / 100);
+    }
+    if (clipEnabled2D[1]) {
+      document.getElementById('clip2d-v-val').textContent = Math.round(minY + (maxY - minY) * clipSliderVal2D[1] / 100);
+    }
+  }
+
   // Helper: draw a board (rect or polygon) with grain, labels, dims into parent element
   function drawBoard(parent, b, ox, oy, bw, bh, dimParent, dimOx, dimOy) {
+    const gKey = b.group || null;
+    const gOpacity = groupState2D[gKey]?.opacity ?? 1.0;
     const cut = hasCuts(b);
     if (cut) {
-      // Polygon (SVG Y is already flipped by caller via oy)
       const pts = boardShape(b);
       const scx = bw / b.w, sch = bh / b.h;
-      // Shadow polygon
       const shadowPts = pts.map(p=>`${ox+p[0]*scx+3},${oy+(b.h-p[1])*sch+3}`).join(' ');
       parent.appendChild(svgEl('polygon',{points:shadowPts,fill:'#00000044'}));
-      // Main polygon
       const mainPts = pts.map(p=>`${ox+p[0]*scx},${oy+(b.h-p[1])*sch}`).join(' ');
-      parent.appendChild(svgEl('polygon',{points:mainPts,fill:b.color,stroke:darken(b.color,.45),'stroke-width':1}));
+      parent.appendChild(svgEl('polygon',{points:mainPts,fill:b.color,stroke:darken(b.color,.45),'stroke-width':1,'fill-opacity':gOpacity,'data-board-id':b.id}));
     } else {
       parent.appendChild(svgEl('rect',{x:ox+3,y:oy+3,width:bw,height:bh,fill:'#00000044',rx:2}));
-      parent.appendChild(svgEl('rect',{x:ox,y:oy,width:bw,height:bh,fill:b.color,stroke:darken(b.color,.45),'stroke-width':1,rx:2}));
+      parent.appendChild(svgEl('rect',{x:ox,y:oy,width:bw,height:bh,fill:b.color,stroke:darken(b.color,.45),'stroke-width':1,rx:2,'fill-opacity':gOpacity,'data-board-id':b.id}));
     }
     // grain
     const gc=Math.min(6,Math.floor(bw/25));
@@ -330,10 +527,10 @@ function render2DAssemble(boards) {
     // text
     const fs=Math.max(8,Math.min(11,bw/Math.max(b.name.length,3)*1.3));
     if (bw>24&&bh>14) {
-      parent.appendChild(svgEl('text',{x:ox+bw/2,y:oy+bh/2-(bh>28?fs*.45:0),fill:'#ffffffcc','text-anchor':'middle','dominant-baseline':'middle','font-size':fs,'font-family':'IBM Plex Sans,sans-serif','font-weight':'600'},b.name));
+      parent.appendChild(svgEl('text',{x:ox+bw/2,y:oy+bh/2-(bh>28?fs*.45:0),fill:'#ffffffcc','text-anchor':'middle','dominant-baseline':'middle','font-size':fs,'font-family':'IBM Plex Sans,sans-serif','font-weight':'600','fill-opacity':gOpacity},b.name));
     }
     if (bh>28&&bw>36) {
-      parent.appendChild(svgEl('text',{x:ox+bw/2,y:oy+bh/2+fs*.85,fill:'#ffffff55','text-anchor':'middle','dominant-baseline':'middle','font-size':Math.max(7,fs-2.5),'font-family':'JetBrains Mono,monospace'},`[${b.id}]`));
+      parent.appendChild(svgEl('text',{x:ox+bw/2,y:oy+bh/2+fs*.85,fill:'#ffffff55','text-anchor':'middle','dominant-baseline':'middle','font-size':Math.max(7,fs-2.5),'font-family':'JetBrains Mono,monospace','fill-opacity':gOpacity},`[${b.id}]`));
     }
     if (bw>28) drawDimH(dimParent,dimOx,dimOx+bw,dimOy+bh+11,`${b.lw}`);
     if (bh>16) drawDimV(dimParent,dimOx-11,dimOy,dimOy+bh,`${b.lh}`);
@@ -348,11 +545,11 @@ function render2DAssemble(boards) {
       const by=ty(b.ly);
       const svgAng = -ang;
       const g = svgEl('g',{transform:`rotate(${svgAng},${bx},${by})`});
-      drawBoard(g, b, bx, by, bw, bh, svg, bx, by);
-      svg.appendChild(g);
+      drawBoard(g, b, bx, by, bw, bh, clipGroup, bx, by);
+      clipGroup.appendChild(g);
     } else {
       const byFlip=ty(b.ly+b.lh);
-      drawBoard(svg, b, bx, byFlip, bw, bh, svg, bx, byFlip);
+      drawBoard(clipGroup, b, bx, byFlip, bw, bh, clipGroup, bx, byFlip);
     }
   }
 
@@ -384,19 +581,36 @@ let selectedBoardId = null;
 let sortMode = 'name';
 let boardVisibility = {}; // id -> bool
 
+// 2D assembled view state
+let groupState2D = {};           // groupName -> { opacity: 1.0 }
+let clipEnabled2D = [false, false]; // H, V axes
+let clipSliderVal2D = [100, 100];
+let explodeFactor2D = 0;
+
+if (!window._groupCollapsed) window._groupCollapsed = {};
+
 function renderBoardSidebar(boards) {
   const el = document.getElementById('board-list-el');
   el.innerHTML = '';
-  let sorted = [...boards];
-  if (sortMode==='name')  sorted.sort((a,b)=>a.name.localeCompare(b.name));
-  if (sortMode==='w')     sorted.sort((a,b)=>b.w-a.w);
-  if (sortMode==='h')     sorted.sort((a,b)=>b.h-a.h);
-  if (sortMode==='area')  sorted.sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+  const groups = window._lastGroups || [];
 
-  for (const b of sorted) {
+  // Sort boards within groups
+  function sortBoards(arr) {
+    let sorted = [...arr];
+    if (sortMode==='name')  sorted.sort((a,b)=>a.name.localeCompare(b.name));
+    if (sortMode==='w')     sorted.sort((a,b)=>b.w-a.w);
+    if (sortMode==='h')     sorted.sort((a,b)=>b.h-a.h);
+    if (sortMode==='area')  sorted.sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+    return sorted;
+  }
+
+  const boardMap = {};
+  for (const b of boards) boardMap[b.id] = b;
+
+  function addBoardItem(b, indented) {
     const vis = boardVisibility[b.id] !== false;
     const item = document.createElement('div');
-    item.className = 'board-item' + (b.id===selectedBoardId?' selected':'') + (!vis?' hidden-board':'');
+    item.className = 'board-item' + (b.id===selectedBoardId?' selected':'') + (!vis?' hidden-board':'') + (indented?' indented':'');
     item.dataset.id = b.id;
 
     const colorDot = document.createElement('div');
@@ -419,12 +633,70 @@ function renderBoardSidebar(boards) {
       selectedBoardId = b.id;
       renderListView(window._lastBoards);
       scrollToBoard(b.id);
+      if (typeof openEditPanel === 'function') openEditPanel(b.id);
     };
 
     item.appendChild(colorDot);
     item.appendChild(info);
     item.appendChild(toggle);
     el.appendChild(item);
+  }
+
+  for (const g of groups) {
+    if (g.name === null) continue;
+    const groupBoards = sortBoards(g.boards.map(id => boardMap[id]).filter(Boolean));
+    if (!groupBoards.length) continue;
+
+    const collapsed = window._groupCollapsed[g.name] || false;
+    const allVisible = groupBoards.every(b => boardVisibility[b.id] !== false);
+    const noneVisible = groupBoards.every(b => boardVisibility[b.id] === false);
+    const firstColor = groupBoards[0].color;
+
+    const hdr = document.createElement('div');
+    hdr.className = 'group-header';
+
+    const chevron = document.createElement('span');
+    chevron.className = 'group-chevron';
+    chevron.textContent = collapsed ? '▶' : '▼';
+
+    const swatch = document.createElement('div');
+    swatch.className = 'board-color';
+    swatch.style.background = firstColor;
+
+    const name = document.createElement('span');
+    name.className = 'group-name';
+    name.textContent = g.name;
+
+    const groupToggle = document.createElement('div');
+    groupToggle.className = 'board-toggle' + (allVisible ? ' on' : (noneVisible ? '' : ' on'));
+    groupToggle.onclick = (e) => {
+      e.stopPropagation();
+      const setTo = !allVisible;
+      for (const b of groupBoards) boardVisibility[b.id] = setTo;
+      renderListView(window._lastBoards);
+    };
+
+    hdr.onclick = () => {
+      window._groupCollapsed[g.name] = !collapsed;
+      renderBoardSidebar(boards);
+    };
+
+    hdr.appendChild(chevron);
+    hdr.appendChild(swatch);
+    hdr.appendChild(name);
+    hdr.appendChild(groupToggle);
+    el.appendChild(hdr);
+
+    if (!collapsed) {
+      for (const b of groupBoards) addBoardItem(b, true);
+    }
+  }
+
+  // Ungrouped boards
+  const ungrouped = groups.find(g => g.name === null);
+  if (ungrouped) {
+    const ungroupedBoards = sortBoards(ungrouped.boards.map(id => boardMap[id]).filter(Boolean));
+    for (const b of ungroupedBoards) addBoardItem(b, false);
   }
 }
 
@@ -618,36 +890,150 @@ function renderListView(boards) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  2D GROUP SIDEBAR + CLIP + EXPLODE
+// ═══════════════════════════════════════════════════════
+function render2DGroupSidebar(groups, boards) {
+  const el = document.getElementById('ctrl-groups-2d');
+  if (!el) return;
+  el.innerHTML = '';
+
+  for (const g of (groups || [])) {
+    if (g.name === null) continue;
+    const key = g.name;
+    if (groupState2D[key] === undefined) groupState2D[key] = { opacity: 1.0 };
+    const boardMap = {};
+    for (const b of (boards || [])) boardMap[b.id] = b;
+    const firstBoard = boardMap[g.boards[0]];
+    const color = firstBoard ? firstBoard.color : '#555';
+    const opacity = groupState2D[key]?.opacity ?? 1.0;
+
+    const row = document.createElement('div');
+    row.className = 'ctrl-group-item';
+
+    const swatch = document.createElement('div');
+    swatch.className = 'ctrl-color-swatch';
+    swatch.style.background = color;
+
+    const name = document.createElement('span');
+    name.className = 'ctrl-group-name' + (opacity <= 0 ? ' dimmed' : '');
+    name.textContent = g.name;
+    name.title = g.name;
+    name.onclick = () => {
+      const cur = groupState2D[key]?.opacity ?? 1.0;
+      groupState2D[key] = { opacity: cur > 0 ? 0 : 1 };
+      update();
+    };
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.className = 'ctrl-slider';
+    slider.min = '0'; slider.max = '100';
+    slider.value = String(Math.round(opacity * 100));
+    slider.oninput = () => {
+      groupState2D[key] = { opacity: slider.value / 100 };
+      val.textContent = slider.value + '%';
+      name.className = 'ctrl-group-name' + (slider.value === '0' ? ' dimmed' : '');
+      update();
+    };
+
+    const val = document.createElement('span');
+    val.className = 'ctrl-value';
+    val.textContent = Math.round(opacity * 100) + '%';
+
+    row.appendChild(swatch);
+    row.appendChild(name);
+    row.appendChild(slider);
+    row.appendChild(val);
+    el.appendChild(row);
+  }
+}
+
+function initClip2DControls() {
+  const axes = ['h', 'v'];
+  for (let i = 0; i < 2; i++) {
+    const toggle = document.getElementById(`clip2d-${axes[i]}-toggle`);
+    const slider = document.getElementById(`clip2d-${axes[i]}-slider`);
+    const valEl = document.getElementById(`clip2d-${axes[i]}-val`);
+
+    toggle.addEventListener('click', () => {
+      clipEnabled2D[i] = !clipEnabled2D[i];
+      toggle.classList.toggle('on', clipEnabled2D[i]);
+      slider.disabled = !clipEnabled2D[i];
+      if (!clipEnabled2D[i]) { valEl.textContent = '—'; }
+      update();
+    });
+
+    slider.addEventListener('input', () => {
+      clipSliderVal2D[i] = Number(slider.value);
+      update();
+    });
+  }
+
+  const explSlider = document.getElementById('explode2d-slider');
+  const explVal = document.getElementById('explode2d-val');
+  explSlider.addEventListener('input', () => {
+    explodeFactor2D = explSlider.value / 100;
+    explVal.textContent = explSlider.value + '%';
+    update();
+  });
+}
+
+// ═══════════════════════════════════════════════════════
 //  3D RENDERER
 // ═══════════════════════════════════════════════════════
 let scene3,cam3,ren3,grp3,initialized3=false;
 let camT=0.7,camP=0.5,camR=4000,camTarget=new THREE.Vector3();
 let mDrag=false,mPrev={x:0,y:0};
 
+// Group state
+let groupState = {};     // groupName -> { opacity: 1.0 }
+let currentGroups = [];
+
+// Clipping planes
+let clipPlanes = [
+  new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0),
+  new THREE.Plane(new THREE.Vector3(0, -1, 0), 0),
+  new THREE.Plane(new THREE.Vector3(0, 0, -1), 0),
+];
+let clipEnabled = [false, false, false];
+let clipRange = { min: [0,0,0], max: [1,1,1] };
+
+// Exploded view
+let explodeFactor = 0;
+
 function init3D(){
   const canvas=document.getElementById('canvas3d');
-  const W=canvas.offsetWidth||800,H=canvas.offsetHeight||600;
+  const par=canvas.parentElement;
+  const W=par.offsetWidth||800,H=par.offsetHeight||600;
   scene3=new THREE.Scene();
   scene3.background=new THREE.Color(0x070b0f);
   scene3.fog=new THREE.FogExp2(0x070b0f,0.00007);
   cam3=new THREE.PerspectiveCamera(40,W/H,1,80000);
   updateCam3();
-  ren3=new THREE.WebGLRenderer({canvas,antialias:true});
+  ren3=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
   ren3.setSize(W,H); ren3.setPixelRatio(Math.min(window.devicePixelRatio,2));
   ren3.shadowMap.enabled=true; ren3.shadowMap.type=THREE.PCFSoftShadowMap;
+  ren3.localClippingEnabled=true;
 
-  scene3.add(new THREE.AmbientLight(0x506070,0.9));
-  const sun=new THREE.DirectionalLight(0xfff5e0,1.1);
+  // Hemisphere light — uniform ambient
+  scene3.add(new THREE.HemisphereLight(0x8090a0, 0x303840, 0.7));
+  // Sun
+  const sun=new THREE.DirectionalLight(0xfff5e0,0.9);
   sun.position.set(3000,5000,2000); sun.castShadow=true;
   sun.shadow.mapSize.width=sun.shadow.mapSize.height=2048;
   ['left','right','top','bottom'].forEach(s=>sun.shadow.camera[s]=s==='top'||s==='right'?4000:-4000);
   sun.shadow.camera.near=10; sun.shadow.camera.far=20000;
   scene3.add(sun);
-  const fill=new THREE.DirectionalLight(0x304870,0.4); fill.position.set(-2000,800,-1500); scene3.add(fill);
+  // Fill 1 — counter-sun
+  const fill1=new THREE.DirectionalLight(0x405070,0.5); fill1.position.set(-3000,1500,-2000); scene3.add(fill1);
+  // Fill 2 — from below
+  const fill2=new THREE.DirectionalLight(0x405060,0.3); fill2.position.set(0,-3000,0); scene3.add(fill2);
+  // Fill 3 — from behind
+  const fill3=new THREE.DirectionalLight(0x354565,0.35); fill3.position.set(1000,2000,-3000); scene3.add(fill3);
 
   const grid=new THREE.GridHelper(8000,40,0x1c2b3d,0x111825);
   grid.position.y=-1; scene3.add(grid);
-  const gnd=new THREE.Mesh(new THREE.PlaneGeometry(10000,10000),new THREE.ShadowMaterial({opacity:.18}));
+  const gnd=new THREE.Mesh(new THREE.PlaneGeometry(10000,10000),new THREE.ShadowMaterial({opacity:.18,side:THREE.DoubleSide}));
   gnd.rotation.x=-Math.PI/2; gnd.receiveShadow=true; scene3.add(gnd);
 
   grp3=new THREE.Group(); scene3.add(grp3);
@@ -658,7 +1044,7 @@ function init3D(){
   canvas.addEventListener('mousemove',e=>{
     if(!mDrag)return;
     camT-=(e.clientX-mPrev.x)*0.008;
-    camP=Math.max(0.05,Math.min(1.52,camP-(e.clientY-mPrev.y)*0.007));
+    camP=Math.max(0.05,Math.min(Math.PI-0.05,camP-(e.clientY-mPrev.y)*0.007));
     mPrev={x:e.clientX,y:e.clientY}; updateCam3();
   });
   canvas.addEventListener('wheel',e=>{
@@ -667,6 +1053,8 @@ function init3D(){
   },{passive:false});
 
   initialized3=true;
+  initClipControls();
+  initExplodeControl();
   (function loop(){requestAnimationFrame(loop);ren3.render(scene3,cam3);})();
 }
 
@@ -675,7 +1063,27 @@ function updateCam3(){
   const y=camR*Math.cos(camP);
   const z=camR*Math.sin(camP)*Math.cos(camT);
   cam3.position.set(camTarget.x+x,camTarget.y+y,camTarget.z+z);
+  cam3.up.set(0,1,0);
   cam3.lookAt(camTarget);
+}
+
+function makeBoardMat(color, groupName) {
+  const opacity = groupState[groupName]?.opacity ?? 1.0;
+  if (opacity <= 0) return null;
+  return new THREE.MeshStandardMaterial({
+    color, roughness: 0.65, metalness: 0.0,
+    transparent: opacity < 1, opacity,
+    side: opacity < 1 ? THREE.DoubleSide : THREE.FrontSide,
+    depthWrite: opacity >= 0.99,
+  });
+}
+
+function getActiveClipPlanes() {
+  const planes = [];
+  for (let i = 0; i < 3; i++) {
+    if (clipEnabled[i]) planes.push(clipPlanes[i]);
+  }
+  return planes.length ? planes : null;
 }
 
 function render3D(boards){
@@ -683,8 +1091,13 @@ function render3D(boards){
   while(grp3.children.length){const c=grp3.children[0];c.geometry?.dispose();c.material?.dispose();grp3.remove(c);}
   if(!boards.length)return;
 
+  const activePlanes = getActiveClipPlanes();
   const allPos=boards.every(b=>b.hasPos&&b.x!==null);
   let ax=0;
+
+  // Pass 1: compute positions + AABB
+  const positions = [];
+  let minBX=Infinity,minBY=Infinity,minBZ=Infinity,maxBX=-Infinity,maxBY=-Infinity,maxBZ=-Infinity;
   let cx=0,cy=0,cz=0,maxDim=0;
 
   for(const b of boards){
@@ -694,33 +1107,90 @@ function render3D(boards){
     if(!allPos) ax+=b.w+20;
 
     const ang = b.angle || 0;
+    let bcx, bcy, bcz;
+
+    if (ang !== 0) {
+      const rad = ang * Math.PI / 180;
+      const cos2 = Math.cos(rad), sin2 = Math.sin(rad);
+      const corners = [
+        [bx, by], [bx + b.w*cos2, by + b.w*sin2],
+        [bx + b.w*cos2 - b.h*sin2, by + b.w*sin2 + b.h*cos2],
+        [bx - b.h*sin2, by + b.h*cos2]
+      ];
+      const xs = corners.map(c=>c[0]), ys = corners.map(c=>c[1]);
+      bcx=(Math.min(...xs)+Math.max(...xs))/2;
+      bcy=(Math.min(...ys)+Math.max(...ys))/2;
+      bcz=bz+b.d/2;
+      minBX=Math.min(minBX,Math.min(...xs)); maxBX=Math.max(maxBX,Math.max(...xs));
+      minBY=Math.min(minBY,Math.min(...ys)); maxBY=Math.max(maxBY,Math.max(...ys));
+      minBZ=Math.min(minBZ,bz); maxBZ=Math.max(maxBZ,bz+b.d);
+      cx+=bcx; cy+=bcy; cz+=bcz;
+      maxDim=Math.max(maxDim,Math.max(...xs),Math.max(...ys),bz+b.d);
+    } else {
+      bcx=bx+b.w/2; bcy=by+b.h/2; bcz=bz+b.d/2;
+      minBX=Math.min(minBX,bx); maxBX=Math.max(maxBX,bx+b.w);
+      minBY=Math.min(minBY,by); maxBY=Math.max(maxBY,by+b.h);
+      minBZ=Math.min(minBZ,bz); maxBZ=Math.max(maxBZ,bz+b.d);
+      cx+=bcx; cy+=bcy; cz+=bcz;
+      maxDim=Math.max(maxDim,bx+b.w,by+b.h,bz+b.d);
+    }
+
+    positions.push({ bx, by, bz, bcx, bcy, bcz });
+  }
+
+  const n=boards.length;
+  const centerX=cx/n, centerY=cy/n, centerZ=cz/n;
+
+  // Save clip range for sliders
+  clipRange.min = [minBX, minBY, minBZ];
+  clipRange.max = [maxBX, maxBY, maxBZ];
+
+  // Pass 2: create meshes
+  for(let i=0;i<boards.length;i++){
+    const b = boards[i];
+    let { bx, by, bz, bcx, bcy, bcz } = positions[i];
+
+    // Exploded view offset
+    if (explodeFactor > 0) {
+      const scale = explodeFactor * 2.0;
+      bx += (bcx - centerX) * scale;
+      by += (bcy - centerY) * scale;
+      bz += (bcz - centerZ) * scale;
+    }
+
+    const ang = b.angle || 0;
     const hasCut = b.cuts && (b.cuts.left!==null||b.cuts.right!==null||b.cuts.top!==null||b.cuts.bottom!==null);
 
-    let geo, mesh;
     let col;
     try{col=new THREE.Color(b.color);}catch{col=new THREE.Color(0xb08050);}
 
+    const gName = b.group || null;
+    const mat = makeBoardMat(col, gName);
+    if (!mat) continue; // group hidden
+
+    const opacity = groupState[gName]?.opacity ?? 1.0;
+    if (activePlanes) mat.clippingPlanes = activePlanes;
+
+    let geo, mesh;
+
     if (hasCut) {
-      // Extruded shape for cut boards
       const pts = boardShape(b);
       const shape = new THREE.Shape();
       shape.moveTo(pts[0][0]-b.w/2, pts[0][1]-b.h/2);
-      for (let i=1; i<pts.length; i++) shape.lineTo(pts[i][0]-b.w/2, pts[i][1]-b.h/2);
+      for (let j=1; j<pts.length; j++) shape.lineTo(pts[j][0]-b.w/2, pts[j][1]-b.h/2);
       shape.closePath();
       geo = new THREE.ExtrudeGeometry(shape, { depth: b.d, bevelEnabled: false });
-      mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:col}));
+      mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(bx+b.w/2, by+b.h/2, bz);
     } else {
       geo = new THREE.BoxGeometry(b.w,b.h,b.d);
-      mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:col}));
+      mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(bx+b.w/2, by+b.h/2, bz+b.d/2);
     }
 
     if (ang !== 0) {
-      // Rotate around origin point, not center
       const rad = ang * Math.PI / 180;
       const cos = Math.cos(rad), sin = Math.sin(rad);
-      // Pivot is at (bx, by) - offset center from pivot
       const hw = b.w/2, hh = b.h/2;
       const rcx = hw*cos - hh*sin;
       const rcy = hw*sin + hh*cos;
@@ -728,50 +1198,153 @@ function render3D(boards){
       mesh.rotation.z = rad;
     }
 
-    mesh.castShadow=true; mesh.receiveShadow=true;
-    const edgeMat=new THREE.LineBasicMaterial({color:new THREE.Color(b.color).multiplyScalar(0.35),transparent:true,opacity:.85});
+    mesh.castShadow = opacity > 0.5;
+    mesh.receiveShadow=true;
+    const edgeCol = new THREE.Color(b.color).multiplyScalar(0.35);
+    const edgeMat=new THREE.LineBasicMaterial({color:edgeCol,transparent:true,opacity:Math.min(0.85,opacity)});
+    if (activePlanes) edgeMat.clippingPlanes = activePlanes;
     mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),edgeMat));
     grp3.add(mesh);
-
-    // AABB for camera bounds
-    if (ang !== 0) {
-      const rad2 = ang * Math.PI / 180;
-      const cos2 = Math.cos(rad2), sin2 = Math.sin(rad2);
-      const corners = [
-        [bx, by], [bx + b.w*cos2, by + b.w*sin2],
-        [bx + b.w*cos2 - b.h*sin2, by + b.w*sin2 + b.h*cos2],
-        [bx - b.h*sin2, by + b.h*cos2]
-      ];
-      const xs = corners.map(c=>c[0]), ys = corners.map(c=>c[1]);
-      cx+=(Math.min(...xs)+Math.max(...xs))/2;
-      cy+=(Math.min(...ys)+Math.max(...ys))/2;
-      cz+=bz+b.d/2;
-      maxDim=Math.max(maxDim,Math.max(...xs),Math.max(...ys),bz+b.d);
-    } else {
-      cx+=bx+b.w/2; cy+=by+b.h/2; cz+=bz+b.d/2;
-      maxDim=Math.max(maxDim,bx+b.w,by+b.h,bz+b.d);
-    }
   }
 
-  const n=boards.length;
-  camTarget.set(cx/n,cy/n,cz/n);
+  camTarget.set(centerX,centerY,centerZ);
   camR=maxDim*2.1;
   updateCam3();
+}
+
+// ── Group sidebar ──
+function renderGroupSidebar(groups, boards) {
+  const el = document.getElementById('ctrl-groups-3d');
+  if (!el) return;
+  el.innerHTML = '';
+  currentGroups = groups || [];
+
+  // Init groupState for new groups
+  for (const g of currentGroups) {
+    const key = g.name || null;
+    if (groupState[key] === undefined) groupState[key] = { opacity: 1.0 };
+  }
+
+  // Find first board color per group
+  const boardMap = {};
+  for (const b of (boards || [])) boardMap[b.id] = b;
+
+  for (const g of currentGroups) {
+    if (g.name === null) continue; // skip ungrouped
+    const key = g.name;
+    const firstBoard = boardMap[g.boards[0]];
+    const color = firstBoard ? firstBoard.color : '#555';
+    const opacity = groupState[key]?.opacity ?? 1.0;
+
+    const row = document.createElement('div');
+    row.className = 'ctrl-group-item';
+
+    const swatch = document.createElement('div');
+    swatch.className = 'ctrl-color-swatch';
+    swatch.style.background = color;
+
+    const name = document.createElement('span');
+    name.className = 'ctrl-group-name' + (opacity <= 0 ? ' dimmed' : '');
+    name.textContent = g.name;
+    name.title = g.name;
+    name.onclick = () => {
+      const cur = groupState[key]?.opacity ?? 1.0;
+      groupState[key] = { opacity: cur > 0 ? 0 : 1 };
+      renderGroupSidebar(currentGroups, window._lastBoards || []);
+      rerender3D();
+    };
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.className = 'ctrl-slider';
+    slider.min = '0'; slider.max = '100';
+    slider.value = String(Math.round(opacity * 100));
+    slider.oninput = () => {
+      groupState[key] = { opacity: slider.value / 100 };
+      val.textContent = slider.value + '%';
+      name.className = 'ctrl-group-name' + (slider.value === '0' ? ' dimmed' : '');
+      rerender3D();
+    };
+
+    const val = document.createElement('span');
+    val.className = 'ctrl-value';
+    val.textContent = Math.round(opacity * 100) + '%';
+
+    row.appendChild(swatch);
+    row.appendChild(name);
+    row.appendChild(slider);
+    row.appendChild(val);
+    el.appendChild(row);
+  }
+}
+
+function rerender3D() {
+  if (!initialized3) return;
+  const boards = (window._lastBoards || []).map(b => ({...b, visible: boardVisibility[b.id] !== false}));
+  render3D(boards.filter(b => b.visible !== false));
+}
+
+// ── Clipping controls ──
+function initClipControls() {
+  const axes = ['x','y','z'];
+  for (let i = 0; i < 3; i++) {
+    const toggle = document.getElementById(`clip-${axes[i]}-toggle`);
+    const slider = document.getElementById(`clip-${axes[i]}-slider`);
+    const valEl = document.getElementById(`clip-${axes[i]}-val`);
+
+    toggle.addEventListener('click', () => {
+      clipEnabled[i] = !clipEnabled[i];
+      toggle.classList.toggle('on', clipEnabled[i]);
+      slider.disabled = !clipEnabled[i];
+      if (!clipEnabled[i]) {
+        valEl.textContent = '—';
+      } else {
+        updateClipPlane(i, slider.value);
+      }
+      rerender3D();
+    });
+
+    slider.addEventListener('input', () => {
+      updateClipPlane(i, slider.value);
+      rerender3D();
+    });
+  }
+}
+
+function updateClipPlane(i, sliderVal) {
+  const t = sliderVal / 100;
+  const mn = clipRange.min[i], mx = clipRange.max[i];
+  const pos = mn + t * (mx - mn);
+  clipPlanes[i].constant = pos;
+  const axes = ['x','y','z'];
+  const valEl = document.getElementById(`clip-${axes[i]}-val`);
+  valEl.textContent = Math.round(pos);
+}
+
+// ── Explode control ──
+function initExplodeControl() {
+  const slider = document.getElementById('explode-slider');
+  const valEl = document.getElementById('explode-val');
+  slider.addEventListener('input', () => {
+    explodeFactor = slider.value / 100;
+    valEl.textContent = slider.value + '%';
+    rerender3D();
+  });
 }
 
 // ═══════════════════════════════════════════════════════
 //  APP STATE
 // ═══════════════════════════════════════════════════════
 let currentTab='2d';
-let current2DMode='assemble';
 let assembleProjection='front';
 let debTimer;
 
 function update(){
   const text=document.getElementById('code').value;
   saveToHash(text);
-  const {boards,errors,varCount}=parseDSL(text);
+  const {boards,errors,varCount,groups}=parseDSL(text);
   window._lastBoards=boards;
+  window._lastGroups=groups;
 
   // Init visibility for new boards
   for(const b of boards) if(boardVisibility[b.id]===undefined) boardVisibility[b.id]=true;
@@ -796,10 +1369,13 @@ function update(){
 
   // Render
   if(currentTab==='2d'){
-    if(current2DMode==='assemble') render2DAssemble(visBoards);
-    else renderListView(boards);
+    render2DAssemble(visBoards);
+    render2DGroupSidebar(groups, boards);
+  } else if(currentTab==='list'){
+    renderListView(boards);
   } else if(currentTab==='3d'&&initialized3){
     render3D(visBoards.filter(b=>b.visible!==false));
+    renderGroupSidebar(groups, boards);
   }
 }
 
@@ -813,42 +1389,14 @@ document.querySelectorAll('.tab').forEach(tab=>{
     tab.classList.add('active');
     currentTab=tab.dataset.tab;
     document.getElementById(`view-${currentTab}`).classList.add('active');
-    const {boards}=parseDSL(document.getElementById('code').value);
-    window._lastBoards=boards;
+    const result=parseDSL(document.getElementById('code').value);
+    const boards=result.boards, groups=result.groups;
+    window._lastBoards=boards; window._lastGroups=groups;
     if(currentTab==='3d'){
-      if(!initialized3) requestAnimationFrame(()=>{init3D();render3D(boards);});
-      else render3D(boards);
+      if(!initialized3) requestAnimationFrame(()=>{init3D();render3D(boards);renderGroupSidebar(groups,boards);});
+      else { render3D(boards); renderGroupSidebar(groups,boards); }
     } else { requestAnimationFrame(()=>update()); }
   });
-});
-
-// ── 2D SUB-TOOLBAR ──
-const projIds = ['proj-sep','proj-front','proj-back','proj-left','proj-right','proj-top','proj-bottom'];
-
-document.getElementById('btn-assemble').addEventListener('click',()=>{
-  current2DMode='assemble';
-  document.getElementById('btn-assemble').classList.add('active');
-  document.getElementById('btn-list').classList.remove('active');
-  document.getElementById('view-2d-assemble').style.display='block';
-  document.getElementById('view-2d-list').style.display='none';
-  projIds.forEach(id=>{document.getElementById(id).style.display='';});
-  ['sort-sep','sort-lbl','sort-name','sort-w','sort-h','sort-area'].forEach(id=>{
-    document.getElementById(id).style.display='none';
-  });
-  update();
-});
-
-document.getElementById('btn-list').addEventListener('click',()=>{
-  current2DMode='list';
-  document.getElementById('btn-list').classList.add('active');
-  document.getElementById('btn-assemble').classList.remove('active');
-  document.getElementById('view-2d-assemble').style.display='none';
-  document.getElementById('view-2d-list').style.display='flex';
-  projIds.forEach(id=>{document.getElementById(id).style.display='none';});
-  ['sort-sep','sort-lbl','sort-name','sort-w','sort-h','sort-area'].forEach(id=>{
-    document.getElementById(id).style.display='';
-  });
-  update();
 });
 
 // Projection buttons
@@ -867,7 +1415,7 @@ document.getElementById('btn-list').addEventListener('click',()=>{
     sortMode=document.getElementById(btnId).dataset.sort;
     ['sort-name','sort-w','sort-h','sort-area'].forEach(id=>document.getElementById(id).classList.remove('active'));
     document.getElementById(btnId).classList.add('active');
-    if(current2DMode==='list') renderListView(window._lastBoards||[]);
+    if(currentTab==='list') renderListView(window._lastBoards||[]);
   });
 });
 
@@ -886,12 +1434,16 @@ window.addEventListener('resize',()=>{
   if(currentTab==='2d'){
     const {boards}=parseDSL(document.getElementById('code').value);
     const vis=boards.map(b=>({...b,visible:boardVisibility[b.id]!==false}));
-    if(current2DMode==='assemble') render2DAssemble(vis);
-    else renderListSVG(boards);
+    render2DAssemble(vis);
+  }
+  if(currentTab==='list'){
+    const {boards}=parseDSL(document.getElementById('code').value);
+    renderListSVG(boards);
   }
   if(initialized3&&ren3){
     const c=document.getElementById('canvas3d');
-    if(c.offsetWidth>0){ren3.setSize(c.offsetWidth,c.offsetHeight);cam3.aspect=c.offsetWidth/c.offsetHeight;cam3.updateProjectionMatrix();}
+    const p=c.parentElement;
+    if(p&&p.offsetWidth>0){ren3.setSize(p.offsetWidth,p.offsetHeight);cam3.aspect=p.offsetWidth/p.offsetHeight;cam3.updateProjectionMatrix();}
   }
 });
 
@@ -957,7 +1509,192 @@ document.getElementById('code').addEventListener('input', () => {
   } catch(e) {}
 })();
 
+// ── EDIT PANEL ──
+let editingBoardId = null;
+
+function openEditPanel(boardId) {
+  const boards = window._lastBoards || [];
+  const board = boards.find(b => b.id === boardId);
+  if (!board) return;
+  editingBoardId = boardId;
+
+  document.getElementById('edit-name').value = board.name;
+  document.getElementById('edit-w').value = board.w;
+  document.getElementById('edit-h').value = board.h;
+  document.getElementById('edit-d').value = board.d;
+  document.getElementById('edit-x').value = board.x ?? 0;
+  document.getElementById('edit-y').value = board.y ?? 0;
+  document.getElementById('edit-z').value = board.z ?? 0;
+  // Expand 3-char hex for color input
+  let col = board.color || '#c9a05a';
+  if (col.length === 4) col = '#' + col[1]+col[1] + col[2]+col[2] + col[3]+col[3];
+  document.getElementById('edit-color').value = col;
+  document.getElementById('edit-view').value = board.view || '';
+
+  document.getElementById('edit-panel').classList.add('open');
+}
+
+function closeEditPanel() {
+  editingBoardId = null;
+  document.getElementById('edit-panel').classList.remove('open');
+}
+
+document.getElementById('edit-close').addEventListener('click', closeEditPanel);
+
+document.getElementById('edit-apply').addEventListener('click', () => {
+  if (!editingBoardId) return;
+  const boards = window._lastBoards || [];
+  const board = boards.find(b => b.id === editingBoardId);
+  if (!board) return;
+
+  const newBoard = {
+    id: editingBoardId,
+    name: document.getElementById('edit-name').value,
+    w: Number(document.getElementById('edit-w').value),
+    h: Number(document.getElementById('edit-h').value),
+    d: Number(document.getElementById('edit-d').value),
+    x: Number(document.getElementById('edit-x').value),
+    y: Number(document.getElementById('edit-y').value),
+    z: Number(document.getElementById('edit-z').value),
+    hasPos: board.hasPos,
+    fromTo: board.fromTo,
+    cuts: board.cuts,
+    view: document.getElementById('edit-view').value || null,
+    color: document.getElementById('edit-color').value,
+  };
+
+  const codeEl = document.getElementById('code');
+  const newSource = editBoardInSource(codeEl.value, editingBoardId, newBoard);
+  codeEl.value = newSource;
+  closeEditPanel();
+  update();
+});
+
+// Click on 2D SVG to open edit panel
+document.getElementById('svg2d').addEventListener('click', (e) => {
+  const target = e.target;
+  const bid = target.getAttribute('data-board-id');
+  if (bid) openEditPanel(bid);
+});
+
+// ── SNAPSHOTS + PDF EXPORT ──
+let snapshots = []; // { type, dataUrl, label }
+
+function captureSVGToDataUrl(svgElement) {
+  return new Promise((resolve) => {
+    const serializer = new XMLSerializer();
+    const svgStr = serializer.serializeToString(svgElement);
+    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = svgElement.clientWidth * 2 || 1600;
+      canvas.height = svgElement.clientHeight * 2 || 1200;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#070b0f';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}
+
+async function captureSnapshot() {
+  let dataUrl = null;
+  let label = '';
+
+  if (currentTab === '2d') {
+    const svg = document.getElementById('svg2d');
+    dataUrl = await captureSVGToDataUrl(svg);
+    label = `2D ${assembleProjection}`;
+  } else if (currentTab === 'list') {
+    const svg = document.getElementById('svg-list');
+    dataUrl = await captureSVGToDataUrl(svg);
+    label = 'Seznam desek';
+  } else if (currentTab === '3d' && initialized3) {
+    ren3.render(scene3, cam3);
+    const canvas = document.getElementById('canvas3d');
+    dataUrl = canvas.toDataURL('image/png');
+    label = '3D náhled';
+  }
+
+  if (!dataUrl) return;
+  snapshots.push({ type: currentTab, dataUrl, label });
+  renderSnapBar();
+}
+
+function renderSnapBar() {
+  const bar = document.getElementById('snap-bar');
+  const badge = document.getElementById('snap-count');
+  bar.innerHTML = '';
+
+  if (snapshots.length === 0) {
+    bar.classList.remove('open');
+    badge.style.display = 'none';
+    return;
+  }
+
+  bar.classList.add('open');
+  badge.style.display = '';
+  badge.textContent = snapshots.length;
+
+  for (let i = 0; i < snapshots.length; i++) {
+    const snap = snapshots[i];
+    const wrap = document.createElement('div');
+    wrap.className = 'snap-thumb-wrap';
+
+    const img = document.createElement('img');
+    img.className = 'snap-thumb';
+    img.src = snap.dataUrl;
+    img.title = snap.label;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'snap-remove';
+    removeBtn.textContent = '\u00d7';
+    removeBtn.onclick = (e) => {
+      e.stopPropagation();
+      snapshots.splice(i, 1);
+      renderSnapBar();
+    };
+
+    wrap.appendChild(img);
+    wrap.appendChild(removeBtn);
+    bar.appendChild(wrap);
+  }
+
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'snap-export';
+  exportBtn.textContent = 'Exportovat PDF';
+  exportBtn.onclick = exportPDF;
+  bar.appendChild(exportBtn);
+}
+
+function exportPDF() {
+  if (!snapshots.length) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  for (let i = 0; i < snapshots.length; i++) {
+    if (i > 0) doc.addPage();
+    doc.setFontSize(14);
+    doc.text(snapshots[i].label, 15, 15);
+    doc.addImage(snapshots[i].dataUrl, 'PNG', 15, 25, 260, 170);
+  }
+
+  doc.save('draftmaid-export.pdf');
+}
+
+document.getElementById('snap-capture').addEventListener('click', captureSnapshot);
+
 // ── INIT ──
+initClip2DControls();
 document.getElementById('code').value=loadFromHash()||DEFAULT_CODE;
 document.getElementById('code').addEventListener('input',debouncedUpdate);
 update();

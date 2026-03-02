@@ -5,6 +5,7 @@ const {
   darken, boardCount, hasCuts, boardShape, listViewDims,
   VIEW_LABELS, autoDetectViews, listViewDimsMulti,
   encodeHash, decodeHash, projectBoard, projAxisLabels,
+  depthSort, reconstructBoardLine, editBoardInSource,
 } = require('../lib/engine.js');
 
 // Helper: create a parser with pre-set vars/boards for isolated method testing
@@ -1007,6 +1008,82 @@ describe('autoDetectViews()', () => {
 // ═══════════════════════════════════════════════════════
 //  26. listViewDimsMulti() with auto-detect
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  26a. group keyword
+// ═══════════════════════════════════════════════════════
+describe('group keyword', () => {
+  it('group "Name" sets group on subsequent boards', () => {
+    const { boards, errors } = parseDSL('group "Rám"\nboard[a] 100 x 200 x 50 "A" at 0,0,0');
+    assert.equal(errors.length, 0);
+    assert.equal(boards[0].group, 'Rám');
+  });
+
+  it('board before group has group: null', () => {
+    const { boards } = parseDSL('board[a] 100 x 200 x 50 "A"\ngroup "G"\nboard[b] 100 x 200 x 50 "B"');
+    assert.equal(boards[0].group, null);
+    assert.equal(boards[1].group, 'G');
+  });
+
+  it('multiple groups assign correctly', () => {
+    const dsl = [
+      'group "A"',
+      'board[a1] 10 x 10 x 10 "A1"',
+      'board[a2] 10 x 10 x 10 "A2"',
+      'group "B"',
+      'board[b1] 10 x 10 x 10 "B1"',
+    ].join('\n');
+    const { boards, errors } = parseDSL(dsl);
+    assert.equal(errors.length, 0);
+    assert.equal(boards[0].group, 'A');
+    assert.equal(boards[1].group, 'A');
+    assert.equal(boards[2].group, 'B');
+  });
+
+  it('invalid group syntax → error', () => {
+    const { errors } = parseDSL('group something');
+    assert.ok(errors.length > 0);
+    assert.ok(errors[0].includes('neplatná skupina'));
+  });
+
+  it('groups in parser output contains correct board IDs', () => {
+    const dsl = [
+      'group "X"',
+      'board[x1] 10 x 10 x 10 "X1"',
+      'group "Y"',
+      'board[y1] 10 x 10 x 10 "Y1"',
+      'board[y2] 10 x 10 x 10 "Y2"',
+    ].join('\n');
+    const { groups } = parseDSL(dsl);
+    assert.ok(Array.isArray(groups));
+    const gx = groups.find(g => g.name === 'X');
+    const gy = groups.find(g => g.name === 'Y');
+    assert.ok(gx);
+    assert.ok(gy);
+    assert.deepEqual(gx.boards, ['x1']);
+    assert.deepEqual(gy.boards, ['y1', 'y2']);
+  });
+
+  it('ungrouped boards go into null group', () => {
+    const dsl = 'board[u] 10 x 10 x 10 "U"\ngroup "G"\nboard[g] 10 x 10 x 10 "G"';
+    const { groups } = parseDSL(dsl);
+    const nullGroup = groups.find(g => g.name === null);
+    assert.ok(nullGroup);
+    assert.deepEqual(nullGroup.boards, ['u']);
+  });
+
+  it('group is case insensitive', () => {
+    const { boards, errors } = parseDSL('Group "Test"\nboard[a] 10 x 10 x 10 "A"');
+    assert.equal(errors.length, 0);
+    assert.equal(boards[0].group, 'Test');
+  });
+
+  it('group with comment', () => {
+    const { boards, errors } = parseDSL('group "Test" # komentář\nboard[a] 10 x 10 x 10 "A"');
+    assert.equal(errors.length, 0);
+    assert.equal(boards[0].group, 'Test');
+  });
+});
+
 describe('listViewDimsMulti() with auto-detect', () => {
   it('without view → returns 2 elements from auto-detect', () => {
     const result = listViewDimsMulti({ w: 800, h: 18, d: 400 });
@@ -1032,5 +1109,152 @@ describe('listViewDims() backward compat with multi-view', () => {
 
   it('"st" → returns side dimensions (first char)', () => {
     assert.deepEqual(listViewDims({ ...b, view: 'st' }), { dw: 50, dh: 200 });
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  28. depthSort()
+// ═══════════════════════════════════════════════════════
+describe('depthSort()', () => {
+  it('front: boards sorted by z+d descending (farthest first)', () => {
+    const layout = [
+      { id: 'near', z: 0, d: 10, x: 0, y: 0, w: 10, h: 10 },
+      { id: 'far', z: 50, d: 10, x: 0, y: 0, w: 10, h: 10 },
+    ];
+    depthSort(layout, 'front');
+    assert.equal(layout[0].id, 'far');
+    assert.equal(layout[1].id, 'near');
+  });
+
+  it('back: boards sorted by z ascending (farthest first)', () => {
+    const layout = [
+      { id: 'far', z: 50, d: 10, x: 0, y: 0, w: 10, h: 10 },
+      { id: 'near', z: 0, d: 10, x: 0, y: 0, w: 10, h: 10 },
+    ];
+    depthSort(layout, 'back');
+    assert.equal(layout[0].id, 'near');
+    assert.equal(layout[1].id, 'far');
+  });
+
+  it('left: boards sorted by x+w descending', () => {
+    const layout = [
+      { id: 'a', x: 0, w: 100, y: 0, z: 0, h: 10, d: 10 },
+      { id: 'b', x: 200, w: 100, y: 0, z: 0, h: 10, d: 10 },
+    ];
+    depthSort(layout, 'left');
+    assert.equal(layout[0].id, 'b');
+  });
+
+  it('right: boards sorted by x ascending', () => {
+    const layout = [
+      { id: 'b', x: 200, w: 100, y: 0, z: 0, h: 10, d: 10 },
+      { id: 'a', x: 0, w: 100, y: 0, z: 0, h: 10, d: 10 },
+    ];
+    depthSort(layout, 'right');
+    assert.equal(layout[0].id, 'a');
+  });
+
+  it('top: boards sorted by y ascending', () => {
+    const layout = [
+      { id: 'high', y: 500, h: 10, x: 0, z: 0, w: 10, d: 10 },
+      { id: 'low', y: 0, h: 10, x: 0, z: 0, w: 10, d: 10 },
+    ];
+    depthSort(layout, 'top');
+    assert.equal(layout[0].id, 'low');
+  });
+
+  it('bottom: boards sorted by y+h descending', () => {
+    const layout = [
+      { id: 'low', y: 0, h: 10, x: 0, z: 0, w: 10, d: 10 },
+      { id: 'high', y: 500, h: 10, x: 0, z: 0, w: 10, d: 10 },
+    ];
+    depthSort(layout, 'bottom');
+    assert.equal(layout[0].id, 'high');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  29. reconstructBoardLine()
+// ═══════════════════════════════════════════════════════
+describe('reconstructBoardLine()', () => {
+  it('minimal board', () => {
+    const b = { id: 'a', w: 100, h: 200, d: 50, name: 'Test', hasPos: false, fromTo: null, cuts: null, view: null, color: null };
+    const line = reconstructBoardLine(b);
+    assert.ok(line.includes('board[a]'));
+    assert.ok(line.includes('100 x 200 x 50'));
+    assert.ok(line.includes('"Test"'));
+  });
+
+  it('board with at position', () => {
+    const b = { id: 'b', w: 100, h: 200, d: 50, name: 'B', hasPos: true, x: 10, y: 20, z: 30, fromTo: null, cuts: null, view: null, color: null };
+    const line = reconstructBoardLine(b);
+    assert.ok(line.includes('at 10, 20, 30'));
+  });
+
+  it('board with from/to', () => {
+    const b = { id: 'c', w: 100, h: 20, d: 50, name: 'C', hasPos: true, x: 0, y: 0, z: 42,
+      fromTo: { x1: 0, y1: 0, x2: 100, y2: 0 }, cuts: null, view: null, color: null };
+    const line = reconstructBoardLine(b);
+    assert.ok(line.includes('from 0,0 to 100,0'));
+    assert.ok(line.includes('z 42'));
+  });
+
+  it('board with cuts', () => {
+    const b = { id: 'd', w: 500, h: 400, d: 50, name: 'D', hasPos: false, fromTo: null,
+      cuts: { left: 300, right: 200, top: null, bottom: null }, view: null, color: null };
+    const line = reconstructBoardLine(b);
+    assert.ok(line.includes('cut left 300 right 200'));
+  });
+
+  it('board with view and color', () => {
+    const b = { id: 'e', w: 100, h: 200, d: 50, name: 'E', hasPos: false, fromTo: null, cuts: null, view: 'ft', color: '#ff0000' };
+    const line = reconstructBoardLine(b);
+    assert.ok(line.includes('view ft'));
+    assert.ok(line.includes('color #ff0000'));
+  });
+
+  it('round-trip: parse → reconstruct → parse produces same board', () => {
+    const dsl = 'board[x] 100 x 200 x 50 "Test"\n  at 10, 20, 30\n  view fs\n  color #abc123';
+    const { boards } = parseDSL(dsl);
+    const line = reconstructBoardLine(boards[0]);
+    const { boards: boards2, errors } = parseDSL(line);
+    assert.equal(errors.length, 0);
+    assert.equal(boards2[0].w, 100);
+    assert.equal(boards2[0].h, 200);
+    assert.equal(boards2[0].x, 10);
+    assert.equal(boards2[0].view, 'fs');
+    assert.equal(boards2[0].color, '#abc123');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  30. editBoardInSource()
+// ═══════════════════════════════════════════════════════
+describe('editBoardInSource()', () => {
+  it('replaces single-line board', () => {
+    const src = '$T = 18\nboard[a] 100 x 200 x 50 "Old" at 0, 0, 0\nboard[b] 50 x 50 x 50 "B"';
+    const newBoard = { id: 'a', w: 200, h: 300, d: 60, name: 'New', hasPos: true, x: 5, y: 6, z: 7, fromTo: null, cuts: null, view: null, color: null };
+    const result = editBoardInSource(src, 'a', newBoard);
+    assert.ok(result.includes('"New"'));
+    assert.ok(result.includes('200 x 300 x 60'));
+    assert.ok(result.includes('board[b]')); // other board preserved
+    assert.ok(result.includes('$T = 18')); // var preserved
+  });
+
+  it('replaces multi-line board', () => {
+    const src = 'board[a] 100 x 200 x 50 "A"\n  at 0, 0, 0\n  color #fff\nboard[b] 50 x 50 x 50 "B"';
+    const newBoard = { id: 'a', w: 150, h: 250, d: 55, name: 'A2', hasPos: false, fromTo: null, cuts: null, view: 'f', color: '#000' };
+    const result = editBoardInSource(src, 'a', newBoard);
+    assert.ok(result.includes('"A2"'));
+    assert.ok(result.includes('150 x 250 x 55'));
+    assert.ok(result.includes('view f'));
+    assert.ok(!result.includes('"A"'));
+    assert.ok(result.includes('board[b]'));
+  });
+
+  it('returns unchanged source if board not found', () => {
+    const src = 'board[a] 100 x 200 x 50 "A"';
+    const result = editBoardInSource(src, 'z', { id: 'z', w: 1, h: 1, d: 1, name: 'Z' });
+    assert.equal(result, src);
   });
 });
