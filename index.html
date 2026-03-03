@@ -5,7 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DraftMaid v0.2</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/foldgutter.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/foldcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/foldgutter.min.js"></script>
   <script src="lib/engine.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -51,6 +56,37 @@
       font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.72;
       padding:12px 14px;resize:none;tab-size:2;caret-color:var(--cyan);}
     #code::selection{background:#4d9de030;}
+
+    /* ── CODEMIRROR THEME ── */
+    .editor-cm-wrap{flex:1;overflow:hidden;position:relative;}
+    .editor-cm-wrap .CodeMirror{height:100%;background:var(--bg0);color:var(--code);
+      font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.72;}
+    .editor-cm-wrap .CodeMirror-gutters{background:var(--bg1);border-right:1px solid var(--line);padding-right:2px;}
+    .editor-cm-wrap .CodeMirror-linenumber{color:var(--dim);font-size:10px;padding:0 4px 0 6px;min-width:24px;}
+    .editor-cm-wrap .CodeMirror-foldmarker{color:var(--cyan);text-shadow:none;font-family:'JetBrains Mono',monospace;font-size:11px;cursor:pointer;}
+    .editor-cm-wrap .CodeMirror-foldgutter{width:12px;}
+    .editor-cm-wrap .CodeMirror-foldgutter-open,
+    .editor-cm-wrap .CodeMirror-foldgutter-folded{color:var(--dim);cursor:pointer;line-height:1.72;font-size:10px;}
+    .editor-cm-wrap .CodeMirror-foldgutter-open:after{content:"\25BE";}
+    .editor-cm-wrap .CodeMirror-foldgutter-folded:after{content:"\25B8";}
+    .editor-cm-wrap .CodeMirror-cursor{border-left:1.5px solid var(--cyan);}
+    .editor-cm-wrap .CodeMirror-selected{background:#4d9de020;}
+    .editor-cm-wrap .CodeMirror-focused .CodeMirror-selected{background:#4d9de030;}
+    .editor-cm-wrap .CodeMirror-activeline-background{background:var(--bg2);}
+    .editor-cm-wrap .CodeMirror-scroll{padding:4px 0;}
+    .editor-cm-wrap .cm-keyword{color:var(--blue);}
+    .editor-cm-wrap .cm-variable{color:var(--amber);}
+    .editor-cm-wrap .cm-string{color:var(--green);}
+    .editor-cm-wrap .cm-comment{color:var(--dim);font-style:italic;}
+    .editor-cm-wrap .cm-number{color:var(--cyan);}
+    .editor-cm-wrap .cm-operator{color:var(--dim2);}
+    .editor-cm-wrap .cm-property{color:var(--purple);}
+    .editor-cm-wrap .cm-bracket{color:var(--dim2);}
+
+    /* fold all / unfold all toolbar */
+    .fold-toolbar{display:flex;align-items:center;gap:4px;margin-left:auto;}
+    .fold-btn{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);background:transparent;border:1px solid var(--line);border-radius:3px;padding:1px 6px;cursor:pointer;transition:all .15s;line-height:1.5;}
+    .fold-btn:hover{color:var(--cyan);border-color:var(--cyan);}
 
     .syntax-ref{border-top:1px solid var(--line);padding:9px 14px;flex-shrink:0;}
     .syntax-ref h4{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:7px;}
@@ -145,7 +181,7 @@
     .error-bar{display:none;background:#150a0a;border-top:1px solid #3d1010;color:#e08080;padding:5px 14px;font-size:10.5px;font-family:'JetBrains Mono',monospace;flex-shrink:0;}
 
     /* ── EDIT PANEL ── */
-    .edit-panel{position:absolute;right:0;top:0;bottom:0;width:280px;background:var(--bg1);border-left:1px solid var(--line);z-index:100;overflow-y:auto;display:none;flex-direction:column;}
+    .edit-panel{position:absolute;right:0;top:0;bottom:74px;width:280px;background:var(--bg1);border-left:1px solid var(--line);z-index:100;overflow-y:auto;display:none;flex-direction:column;}
     .edit-panel.open{display:flex;}
     .edit-header{height:36px;display:flex;align-items:center;padding:0 12px;font-size:11px;font-weight:600;color:var(--cyan);border-bottom:1px solid var(--line);flex-shrink:0;gap:8px;}
     .edit-header button{margin-left:auto;background:none;border:none;color:var(--dim);font-size:16px;cursor:pointer;padding:0 4px;}
@@ -153,8 +189,11 @@
     .edit-body{padding:12px;display:flex;flex-direction:column;gap:10px;}
     .edit-field{display:flex;flex-direction:column;gap:3px;}
     .edit-field label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);}
-    .edit-field textarea{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.65;color:var(--code);background:var(--bg0);border:1px solid var(--line);border-radius:3px;padding:8px;outline:none;resize:vertical;tab-size:2;}
-    .edit-field textarea:focus{border-color:var(--cyan);}
+    .edit-input{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--code);background:var(--bg0);border:1px solid var(--line);border-radius:3px;padding:5px 8px;outline:none;width:100%;box-sizing:border-box;}
+    .edit-input:focus{border-color:var(--cyan);}
+    .edit-row{display:flex;gap:4px;align-items:center;}
+    .edit-sep{color:var(--dim);font-size:11px;flex-shrink:0;}
+    .edit-mini-label{font-size:9px;color:var(--dim);width:12px;text-align:center;flex-shrink:0;}
     .edit-apply{font-family:'IBM Plex Sans',sans-serif;font-size:11px;font-weight:600;color:#000;background:var(--cyan);border:none;border-radius:4px;padding:6px 14px;cursor:pointer;transition:opacity .15s;}
     .edit-apply:hover{opacity:.85;}
 
@@ -193,8 +232,8 @@
 
   <!-- ── EDITOR ── -->
   <div class="editor-side">
-    <div class="pane-label">DSL Editor</div>
-    <textarea id="code" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+    <div class="pane-label">DSL Editor<div class="fold-toolbar"><button class="fold-btn" id="fold-all" title="Sbalit vše">⊟</button><button class="fold-btn" id="unfold-all" title="Rozbalit vše">⊞</button></div></div>
+    <div class="editor-cm-wrap"><textarea id="code"></textarea></div>
     <div class="syntax-ref">
       <h4>Syntaxe</h4>
       <div class="syn-row"><span class="k">$název</span> = <span class="v">hodnota</span> &nbsp;<span class="c"># proměnná</span></div>
@@ -340,11 +379,71 @@
 
     <!-- Edit panel -->
     <div class="edit-panel" id="edit-panel">
-      <div class="edit-header">Upravit desku <button id="edit-close">&times;</button></div>
+      <div class="edit-header">Upravit desku <span id="edit-board-id" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);"></span> <button id="edit-close">&times;</button></div>
       <div class="edit-body">
         <div class="edit-field">
-          <label>DSL zdroj</label>
-          <textarea id="edit-source" rows="10"></textarea>
+          <label>Název</label>
+          <input type="text" id="edit-name" class="edit-input">
+        </div>
+        <div class="edit-field">
+          <label>Rozměry (Š × V × H)</label>
+          <div class="edit-row">
+            <input type="text" id="edit-w" class="edit-input" placeholder="Š">
+            <span class="edit-sep">×</span>
+            <input type="text" id="edit-h" class="edit-input" placeholder="V">
+            <span class="edit-sep">×</span>
+            <input type="text" id="edit-d" class="edit-input" placeholder="H">
+          </div>
+        </div>
+        <div class="edit-field" id="edit-pos-section">
+          <label id="edit-pos-label">Pozice (at X, Y, Z)</label>
+          <div id="edit-pos-at" class="edit-row">
+            <input type="text" id="edit-x" class="edit-input" placeholder="X">
+            <input type="text" id="edit-y" class="edit-input" placeholder="Y">
+            <input type="text" id="edit-z" class="edit-input" placeholder="Z">
+          </div>
+          <div id="edit-pos-from" style="display:none;">
+            <div class="edit-row" style="margin-bottom:4px;">
+              <span class="edit-mini-label" style="width:auto;">od</span>
+              <input type="text" id="edit-x1" class="edit-input" placeholder="X1">
+              <input type="text" id="edit-y1" class="edit-input" placeholder="Y1">
+            </div>
+            <div class="edit-row" style="margin-bottom:4px;">
+              <span class="edit-mini-label" style="width:auto;">do</span>
+              <input type="text" id="edit-x2" class="edit-input" placeholder="X2">
+              <input type="text" id="edit-y2" class="edit-input" placeholder="Y2">
+            </div>
+            <div class="edit-row">
+              <span class="edit-mini-label">Z:</span>
+              <input type="text" id="edit-fz" class="edit-input" placeholder="Z">
+            </div>
+          </div>
+        </div>
+        <div class="edit-field" id="edit-cut-section" style="display:none;">
+          <label>Ořez</label>
+          <div class="edit-row" style="margin-bottom:4px;">
+            <span class="edit-mini-label">L</span>
+            <input type="text" id="edit-cut-left" class="edit-input" placeholder="—">
+            <span class="edit-mini-label">R</span>
+            <input type="text" id="edit-cut-right" class="edit-input" placeholder="—">
+          </div>
+          <div class="edit-row">
+            <span class="edit-mini-label">T</span>
+            <input type="text" id="edit-cut-top" class="edit-input" placeholder="—">
+            <span class="edit-mini-label">B</span>
+            <input type="text" id="edit-cut-bottom" class="edit-input" placeholder="—">
+          </div>
+        </div>
+        <div class="edit-field">
+          <label>Pohled</label>
+          <input type="text" id="edit-view" class="edit-input" placeholder="f, s, t, fs...">
+        </div>
+        <div class="edit-field">
+          <label>Barva</label>
+          <div class="edit-row">
+            <input type="text" id="edit-color" class="edit-input" placeholder="#hex">
+            <input type="color" id="edit-color-pick" style="width:28px;height:24px;padding:0;border:1px solid var(--line);background:none;cursor:pointer;flex-shrink:0;">
+          </div>
         </div>
         <button class="edit-apply" id="edit-apply">Uložit</button>
       </div>
@@ -355,6 +454,130 @@
 </div>
 
 <script>
+// ═══════════════════════════════════════════════════════
+//  CODEMIRROR: DSL MODE + FOLD
+// ═══════════════════════════════════════════════════════
+
+// Custom DSL syntax mode
+CodeMirror.defineMode('draftmaid-dsl', function() {
+  return {
+    startState: function() { return { inBoard: false }; },
+    token: function(stream, state) {
+      // Comments
+      if (stream.match(/^#\s.*/) || stream.match(/^\/\/.*/)) return 'comment';
+      // Inline comment at end (# preceded by space)
+      if (stream.peek() === '#' && stream.column() > 0) {
+        const rest = stream.string.slice(stream.pos);
+        if (/^#\s/.test(rest)) { stream.skipToEnd(); return 'comment'; }
+      }
+      // Keywords
+      if (stream.match(/^(board|group)\b/i)) return 'keyword';
+      if (stream.match(/^(at|from|to|cut|view|color|left|right|top|bottom)\b/i)) return 'keyword';
+      // Variables
+      if (stream.match(/^\$[a-zA-Z_]\w*/)) return 'variable';
+      // Board references {id.prop}
+      if (stream.match(/^\{[^}]+\}/)) return 'property';
+      // Functions
+      if (stream.match(/^LEN\b/i)) return 'keyword';
+      // Strings
+      if (stream.match(/^"[^"]*"/)) return 'string';
+      // Hex colors
+      if (stream.match(/^#[0-9a-fA-F]{3,6}\b/)) return 'number';
+      // Numbers
+      if (stream.match(/^-?\d+(\.\d+)?/)) return 'number';
+      // Operators
+      if (stream.match(/^[x×+\-*\/(),=]/)) return 'operator';
+      // Brackets
+      if (stream.match(/^[\[\]{}()]/)) return 'bracket';
+      // Skip whitespace
+      if (stream.eatSpace()) return null;
+      // Advance
+      stream.next();
+      return null;
+    }
+  };
+});
+
+// Custom fold rangeFinder for DSL multiline boards
+function dslFoldRange(cm, start) {
+  const line = cm.getLine(start.line);
+  if (!line || !/^\s*board\b/i.test(line)) return undefined;
+
+  const lastLine = cm.lastLine();
+  let end = start.line;
+
+  for (let i = start.line + 1; i <= lastLine; i++) {
+    const next = cm.getLine(i);
+    if (/^[ \t]+/.test(next) && next.trim() && !next.trim().startsWith('#') && !next.trim().startsWith('//')) {
+      end = i;
+    } else {
+      break;
+    }
+  }
+
+  if (end > start.line) {
+    return {
+      from: CodeMirror.Pos(start.line, line.length),
+      to: CodeMirror.Pos(end, cm.getLine(end).length)
+    };
+  }
+  return undefined;
+}
+
+// Initialize CodeMirror editor
+const cmEditor = CodeMirror.fromTextArea(document.getElementById('code'), {
+  mode: 'draftmaid-dsl',
+  lineNumbers: true,
+  lineWrapping: false,
+  tabSize: 2,
+  indentWithTabs: false,
+  styleActiveLine: true,
+  foldGutter: { rangeFinder: dslFoldRange },
+  gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+  extraKeys: {
+    'Ctrl-Q': function(cm) { cm.foldCode(cm.getCursor()); },
+    'Tab': function(cm) {
+      if (cm.somethingSelected()) cm.indentSelection('add');
+      else cm.replaceSelection('  ', 'end');
+    }
+  },
+  foldOptions: { widget: '\u22EF', rangeFinder: dslFoldRange }
+});
+
+// Helper: get/set code value via CodeMirror
+function getCode() { return cmEditor.getValue(); }
+function setCode(text) { cmEditor.setValue(text); }
+
+// Fold all multiline boards
+function foldAllBoards() {
+  cmEditor.operation(function() {
+    const lastLine = cmEditor.lastLine();
+    for (let i = 0; i <= lastLine; i++) {
+      const line = cmEditor.getLine(i);
+      if (line && /^\s*board\b/i.test(line)) {
+        cmEditor.foldCode(CodeMirror.Pos(i, 0), dslFoldRange, 'fold');
+      }
+    }
+  });
+}
+
+// Unfold all
+function unfoldAllBoards() {
+  cmEditor.operation(function() {
+    const lastLine = cmEditor.lastLine();
+    for (let i = 0; i <= lastLine; i++) {
+      const line = cmEditor.getLine(i);
+      if (line && /^\s*board\b/i.test(line)) {
+        cmEditor.foldCode(CodeMirror.Pos(i, 0), dslFoldRange, 'unfold');
+      }
+    }
+  });
+}
+
+// Fold/unfold buttons
+document.getElementById('fold-all').addEventListener('click', foldAllBoards);
+document.getElementById('unfold-all').addEventListener('click', unfoldAllBoards);
+
 function svgEl(tag, attrs={}, text='') {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [k,v] of Object.entries(attrs)) el.setAttribute(k,v);
@@ -414,10 +637,10 @@ function render2DAssemble(boards) {
     function depthCoord(b) {
       const bx = b.x ?? 0, by = b.y ?? 0, bz = b.z ?? 0;
       switch (proj) {
-        case 'front':  return bz;
-        case 'back':   return -(bz + (b.d || 0));
-        case 'left':   return bx;
-        case 'right':  return -(bx + (b.w || 0));
+        case 'front':  return bx;
+        case 'back':   return -(bx + (b.w || 0));
+        case 'left':   return bz;
+        case 'right':  return -(bz + (b.d || 0));
         case 'top':    return -(by + (b.h || 0));
         case 'bottom': return by;
         default: return 0;
@@ -425,8 +648,8 @@ function render2DAssemble(boards) {
     }
     function depthSize(b) {
       switch (proj) {
-        case 'front': case 'back': return b.d || 0;
-        case 'left': case 'right': return b.w || 0;
+        case 'front': case 'back': return b.w || 0;
+        case 'left': case 'right': return b.d || 0;
         case 'top': case 'bottom': return b.h || 0;
         default: return 0;
       }
@@ -437,15 +660,15 @@ function render2DAssemble(boards) {
       dMin = Math.min(dMin, dc);
       dMax = Math.max(dMax, dc + depthSize(b));
     }
-    const cutoff = dMin + (dMax - dMin) * clipDepthVal / 100;
-    layout = layout.filter(b => depthCoord(b) < cutoff);
+    const cutoff = dMin + (dMax - dMin) * (1 - clipDepthVal / 100);
+    layout = layout.filter(b => depthCoord(b) >= cutoff);
 
     // Update depth axis label and value display
-    const axisName = { front: 'Z', back: 'Z', left: 'X', right: 'X', top: 'Y', bottom: 'Y' }[proj] || '?';
+    const axisName = { front: 'X', back: 'X', left: 'Z', right: 'Z', top: 'Y', bottom: 'Y' }[proj] || '?';
     document.getElementById('clip2d-depth-axis').textContent = axisName;
     document.getElementById('clip2d-depth-val').textContent = Math.round(cutoff);
   } else if (clipDepthEnabled) {
-    const axisName = { front: 'Z', back: 'Z', left: 'X', right: 'X', top: 'Y', bottom: 'Y' }[proj] || '?';
+    const axisName = { front: 'X', back: 'X', left: 'Z', right: 'Z', top: 'Y', bottom: 'Y' }[proj] || '?';
     document.getElementById('clip2d-depth-axis').textContent = axisName;
     document.getElementById('clip2d-depth-val').textContent = 'max';
   }
@@ -468,7 +691,7 @@ function render2DAssemble(boards) {
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
   for (const b of layout) {
     const ang = b.angle || 0;
-    if (ang !== 0 && (proj === 'front' || proj === 'back')) {
+    if (ang !== 0 && (proj === 'left' || proj === 'right')) {
       // AABB for rotated board
       const rad = ang * Math.PI / 180;
       const cos = Math.cos(rad), sin = Math.sin(rad);
@@ -537,7 +760,7 @@ function render2DAssemble(boards) {
 
   for (const b of layout) {
     const ang = b.angle || 0;
-    const rotated = ang !== 0 && (proj === 'front' || proj === 'back');
+    const rotated = ang !== 0 && (proj === 'left' || proj === 'right');
     const bx=tx(b.lx), bw=b.lw*scale, bh=b.lh*scale;
 
     if (rotated) {
@@ -1011,21 +1234,22 @@ function init3D(){
   ren3.shadowMap.enabled=true; ren3.shadowMap.type=THREE.PCFSoftShadowMap;
   ren3.localClippingEnabled=true;
 
-  // Hemisphere light — uniform ambient
-  scene3.add(new THREE.HemisphereLight(0x8090a0, 0x303840, 0.7));
-  // Sun
-  const sun=new THREE.DirectionalLight(0xfff5e0,0.9);
+  // Ambient light — base illumination for all faces
+  scene3.add(new THREE.AmbientLight(0xffffff, 0.45));
+  // Hemisphere light — sky/ground tint
+  scene3.add(new THREE.HemisphereLight(0xc0d0e0, 0x606050, 0.5));
+  // Sun — primary directional
+  const sun=new THREE.DirectionalLight(0xfff5e0,0.8);
   sun.position.set(3000,5000,2000); sun.castShadow=true;
   sun.shadow.mapSize.width=sun.shadow.mapSize.height=2048;
   ['left','right','top','bottom'].forEach(s=>sun.shadow.camera[s]=s==='top'||s==='right'?4000:-4000);
   sun.shadow.camera.near=10; sun.shadow.camera.far=20000;
   scene3.add(sun);
-  // Fill 1 — counter-sun
-  const fill1=new THREE.DirectionalLight(0x405070,0.5); fill1.position.set(-3000,1500,-2000); scene3.add(fill1);
-  // Fill 2 — from below
-  const fill2=new THREE.DirectionalLight(0x405060,0.3); fill2.position.set(0,-3000,0); scene3.add(fill2);
-  // Fill 3 — from behind
-  const fill3=new THREE.DirectionalLight(0x354565,0.35); fill3.position.set(1000,2000,-3000); scene3.add(fill3);
+  // Fill lights — illuminate from opposite sides so no face is dark
+  const fill1=new THREE.DirectionalLight(0xb0c0d0,0.6); fill1.position.set(-3000,2000,-2000); scene3.add(fill1);
+  const fill2=new THREE.DirectionalLight(0xa0b0c0,0.5); fill2.position.set(0,3000,-3000); scene3.add(fill2);
+  const fill3=new THREE.DirectionalLight(0x90a0b0,0.4); fill3.position.set(-2000,1000,3000); scene3.add(fill3);
+  const fill4=new THREE.DirectionalLight(0x8090a0,0.3); fill4.position.set(2000,-1000,-2000); scene3.add(fill4);
 
   const grid=new THREE.GridHelper(8000,40,0x1c2b3d,0x111825);
   grid.position.y=-1; scene3.add(grid);
@@ -1336,7 +1560,7 @@ let assembleProjection='front';
 let debTimer;
 
 function update(){
-  const text=document.getElementById('code').value;
+  const text=getCode();
   saveToHash(text);
   const {boards,errors,varCount,groups}=parseDSL(text);
   window._lastBoards=boards;
@@ -1385,7 +1609,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     tab.classList.add('active');
     currentTab=tab.dataset.tab;
     document.getElementById(`view-${currentTab}`).classList.add('active');
-    const result=parseDSL(document.getElementById('code').value);
+    const result=parseDSL(getCode());
     const boards=result.boards, groups=result.groups;
     window._lastBoards=boards; window._lastGroups=groups;
     if(currentTab==='3d'){
@@ -1427,13 +1651,14 @@ document.getElementById('btn-none').addEventListener('click',()=>{
 
 // Resize
 window.addEventListener('resize',()=>{
+  cmEditor.refresh();
   if(currentTab==='2d'){
-    const {boards}=parseDSL(document.getElementById('code').value);
+    const {boards}=parseDSL(getCode());
     const vis=boards.map(b=>({...b,visible:boardVisibility[b.id]!==false}));
     render2DAssemble(vis);
   }
   if(currentTab==='list'){
-    const {boards}=parseDSL(document.getElementById('code').value);
+    const {boards}=parseDSL(getCode());
     renderListSVG(boards);
   }
   if(initialized3&&ren3){
@@ -1454,10 +1679,12 @@ EXAMPLES.forEach((ex, i) => {
 exSelect.addEventListener('change', () => {
   const idx = exSelect.value;
   if (idx === '') return;
-  document.getElementById('code').value = EXAMPLES[idx].code;
+  setCode(EXAMPLES[idx].code);
   update();
+  // Auto-fold multiline boards after loading example
+  setTimeout(foldAllBoards, 50);
 });
-document.getElementById('code').addEventListener('input', () => {
+cmEditor.on('change', () => {
   exSelect.value = '';
 });
 
@@ -1486,6 +1713,7 @@ document.getElementById('code').addEventListener('input', () => {
   window.addEventListener('mousemove', (e) => {
     if (!dragging) return;
     applyWidth(e.clientX - editor.getBoundingClientRect().left);
+    cmEditor.refresh();
   });
 
   window.addEventListener('mouseup', () => {
@@ -1495,13 +1723,14 @@ document.getElementById('code').addEventListener('input', () => {
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     try { localStorage.setItem('draftmaid-editor-width', editor.offsetWidth); } catch(e) {}
+    cmEditor.refresh();
     window.dispatchEvent(new Event('resize'));
   });
 
   // Restore saved width on load
   try {
     const saved = localStorage.getItem('draftmaid-editor-width');
-    if (saved) applyWidth(Number(saved));
+    if (saved) { applyWidth(Number(saved)); setTimeout(() => cmEditor.refresh(), 50); }
   } catch(e) {}
 })();
 
@@ -1514,9 +1743,54 @@ function openEditPanel(boardId) {
   if (!board) return;
   editingBoardId = boardId;
 
-  const codeEl = document.getElementById('code');
-  const rawSource = extractBoardSource(codeEl.value, boardId);
-  document.getElementById('edit-source').value = rawSource;
+  const rawSource = extractBoardSource(getCode(), boardId);
+  const fields = parseBoardSourceRaw(rawSource);
+  if (!fields) return;
+
+  document.getElementById('edit-board-id').textContent = `[${fields.id}]`;
+  document.getElementById('edit-name').value = fields.name;
+  document.getElementById('edit-w').value = fields.w;
+  document.getElementById('edit-h').value = fields.h;
+  document.getElementById('edit-d').value = fields.d;
+
+  // Position
+  const posAt = document.getElementById('edit-pos-at');
+  const posFrom = document.getElementById('edit-pos-from');
+  if (fields.posType === 'from') {
+    posAt.style.display = 'none';
+    posFrom.style.display = '';
+    document.getElementById('edit-pos-label').textContent = 'Pozice (from/to)';
+    document.getElementById('edit-x1').value = fields.x1;
+    document.getElementById('edit-y1').value = fields.y1;
+    document.getElementById('edit-x2').value = fields.x2;
+    document.getElementById('edit-y2').value = fields.y2;
+    document.getElementById('edit-fz').value = fields.fz;
+  } else {
+    posAt.style.display = '';
+    posFrom.style.display = 'none';
+    document.getElementById('edit-pos-label').textContent = 'Pozice (at X, Y, Z)';
+    document.getElementById('edit-x').value = fields.x;
+    document.getElementById('edit-y').value = fields.y;
+    document.getElementById('edit-z').value = fields.z;
+  }
+  if (fields.posType === 'none') {
+    document.getElementById('edit-pos-section').style.display = 'none';
+  } else {
+    document.getElementById('edit-pos-section').style.display = '';
+  }
+
+  // Cuts
+  const hasCut = fields.cutLeft || fields.cutRight || fields.cutTop || fields.cutBottom;
+  document.getElementById('edit-cut-section').style.display = hasCut ? '' : 'none';
+  document.getElementById('edit-cut-left').value = fields.cutLeft;
+  document.getElementById('edit-cut-right').value = fields.cutRight;
+  document.getElementById('edit-cut-top').value = fields.cutTop;
+  document.getElementById('edit-cut-bottom').value = fields.cutBottom;
+
+  // View & color
+  document.getElementById('edit-view').value = fields.view;
+  document.getElementById('edit-color').value = fields.color;
+  try { document.getElementById('edit-color-pick').value = fields.color || '#b08050'; } catch(e) {}
 
   document.getElementById('edit-panel').classList.add('open');
 }
@@ -1528,13 +1802,47 @@ function closeEditPanel() {
 
 document.getElementById('edit-close').addEventListener('click', closeEditPanel);
 
+// Sync color picker → text input
+document.getElementById('edit-color-pick').addEventListener('input', () => {
+  document.getElementById('edit-color').value = document.getElementById('edit-color-pick').value;
+});
+
 document.getElementById('edit-apply').addEventListener('click', () => {
   if (!editingBoardId) return;
 
-  const codeEl = document.getElementById('code');
-  const newText = document.getElementById('edit-source').value;
-  const newSource = editBoardInSource(codeEl.value, editingBoardId, newText);
-  codeEl.value = newSource;
+  const rawSource = extractBoardSource(getCode(), editingBoardId);
+  const fields = parseBoardSourceRaw(rawSource);
+  if (!fields) return;
+
+  // Read form values back into fields
+  fields.name = document.getElementById('edit-name').value;
+  fields.w = document.getElementById('edit-w').value;
+  fields.h = document.getElementById('edit-h').value;
+  fields.d = document.getElementById('edit-d').value;
+
+  if (fields.posType === 'from') {
+    fields.x1 = document.getElementById('edit-x1').value;
+    fields.y1 = document.getElementById('edit-y1').value;
+    fields.x2 = document.getElementById('edit-x2').value;
+    fields.y2 = document.getElementById('edit-y2').value;
+    fields.fz = document.getElementById('edit-fz').value;
+  } else if (fields.posType === 'at') {
+    fields.x = document.getElementById('edit-x').value;
+    fields.y = document.getElementById('edit-y').value;
+    fields.z = document.getElementById('edit-z').value;
+  }
+
+  fields.cutLeft = document.getElementById('edit-cut-left').value;
+  fields.cutRight = document.getElementById('edit-cut-right').value;
+  fields.cutTop = document.getElementById('edit-cut-top').value;
+  fields.cutBottom = document.getElementById('edit-cut-bottom').value;
+
+  fields.view = document.getElementById('edit-view').value;
+  fields.color = document.getElementById('edit-color').value;
+
+  const newText = reconstructBoardLineRaw(fields);
+  const newSource = editBoardInSource(getCode(), editingBoardId, newText);
+  setCode(newSource);
   closeEditPanel();
   update();
 });
@@ -1549,7 +1857,7 @@ document.getElementById('svg2d').addEventListener('click', (e) => {
 // ── SNAPSHOTS + PDF EXPORT ──
 let snapshots = []; // { type, dataUrl, label }
 
-function captureSVGToDataUrl(svgElement) {
+function captureSVGToDataUrl(svgElement, useFullSize) {
   return new Promise((resolve) => {
     const serializer = new XMLSerializer();
     const svgStr = serializer.serializeToString(svgElement);
@@ -1558,8 +1866,16 @@ function captureSVGToDataUrl(svgElement) {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = svgElement.clientWidth * 2 || 1600;
-      canvas.height = svgElement.clientHeight * 2 || 1200;
+      if (useFullSize) {
+        // Use the SVG's own width/height attributes (full content, not viewport)
+        const svgW = parseInt(svgElement.getAttribute('width')) || svgElement.clientWidth || 1600;
+        const svgH = parseInt(svgElement.getAttribute('height')) || svgElement.clientHeight || 1200;
+        canvas.width = svgW * 2;
+        canvas.height = svgH * 2;
+      } else {
+        canvas.width = svgElement.clientWidth * 2 || 1600;
+        canvas.height = svgElement.clientHeight * 2 || 1200;
+      }
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#070b0f';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1584,9 +1900,19 @@ async function captureSnapshot() {
     dataUrl = await captureSVGToDataUrl(svg);
     label = `2D ${assembleProjection}`;
   } else if (currentTab === 'list') {
+    // For the board list, capture the full SVG (not just visible viewport)
     const svg = document.getElementById('svg-list');
-    dataUrl = await captureSVGToDataUrl(svg);
+    const svgW = parseInt(svg.getAttribute('width')) || svg.clientWidth;
+    const svgH = parseInt(svg.getAttribute('height')) || svg.clientHeight;
+    // Store original dimensions for multi-page PDF
+    dataUrl = await captureSVGToDataUrl(svg, true);
     label = 'Seznam desek';
+    if (dataUrl) {
+      snapshots.push({ type: 'list', dataUrl, label, fullW: svgW, fullH: svgH });
+      renderSnapBar();
+      return;
+    }
+    return;
   } else if (currentTab === '3d' && initialized3) {
     ren3.render(scene3, cam3);
     const canvas = document.getElementById('canvas3d');
@@ -1647,26 +1973,55 @@ function renderSnapBar() {
 
 function exportPDF() {
   if (!snapshots.length) return;
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  try {
+    if (!window.jspdf) { alert('jsPDF se nepodařilo načíst. Zkontrolujte připojení k internetu.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
-  for (let i = 0; i < snapshots.length; i++) {
-    if (i > 0) doc.addPage();
-    doc.setFontSize(14);
-    doc.text(snapshots[i].label, 15, 15);
-    doc.addImage(snapshots[i].dataUrl, 'PNG', 15, 25, 260, 170);
+    for (let i = 0; i < snapshots.length; i++) {
+      if (i > 0) doc.addPage();
+      const snap = snapshots[i];
+      doc.setFontSize(14);
+      doc.text(snap.label, 15, 15);
+      if (snap.type === 'list' && snap.fullW && snap.fullH) {
+        // Board list: scale to fit width, paginate if too tall
+        const pageW = 260, maxPageH = 170;
+        const imgAspect = snap.fullH / snap.fullW;
+        const imgW = pageW;
+        const imgH = pageW * imgAspect;
+        if (imgH <= maxPageH) {
+          doc.addImage(snap.dataUrl, 'PNG', 15, 25, imgW, imgH);
+        } else {
+          // Span across multiple pages
+          const pagesNeeded = Math.ceil(imgH / maxPageH);
+          for (let p = 0; p < pagesNeeded; p++) {
+            if (p > 0) { doc.addPage(); doc.setFontSize(14); doc.text(snap.label + ` (${p + 1}/${pagesNeeded})`, 15, 15); }
+            // Clip by drawing full image offset upward
+            const yOff = 25 - p * maxPageH;
+            doc.addImage(snap.dataUrl, 'PNG', 15, yOff, imgW, imgH);
+          }
+        }
+      } else {
+        doc.addImage(snap.dataUrl, 'PNG', 15, 25, 260, 170);
+      }
+    }
+
+    doc.save('draftmaid-export.pdf');
+  } catch (e) {
+    console.error('PDF export error:', e);
+    alert('Chyba při exportu PDF: ' + e.message);
   }
-
-  doc.save('draftmaid-export.pdf');
 }
 
 document.getElementById('snap-capture').addEventListener('click', captureSnapshot);
 
 // ── INIT ──
 initClip2DControls();
-document.getElementById('code').value=loadFromHash()||DEFAULT_CODE;
-document.getElementById('code').addEventListener('input',debouncedUpdate);
+setCode(loadFromHash()||DEFAULT_CODE);
+cmEditor.on('changes', debouncedUpdate);
 update();
+// Auto-fold multiline boards on initial load
+setTimeout(foldAllBoards, 100);
 </script>
 </body>
 </html>
