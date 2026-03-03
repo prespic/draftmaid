@@ -6,6 +6,7 @@ const {
   VIEW_LABELS, autoDetectViews, listViewDimsMulti,
   encodeHash, decodeHash, projectBoard, projAxisLabels,
   depthSort, reconstructBoardLine, extractBoardSource, editBoardInSource,
+  parseBoardSourceRaw, reconstructBoardLineRaw,
 } = require('../lib/engine.js');
 
 // Helper: create a parser with pre-set vars/boards for isolated method testing
@@ -845,20 +846,20 @@ describe('encodeHash() / decodeHash()', () => {
 describe('projectBoard()', () => {
   const b = { w: 100, h: 200, d: 50, x: 10, y: 20, z: 30 };
 
-  it('front projection', () => {
-    assert.deepEqual(projectBoard(b, 'front'), { lx: 10, ly: 20, lw: 100, lh: 200 });
+  it('front projection (camera at -X, shows Z-Y)', () => {
+    assert.deepEqual(projectBoard(b, 'front'), { lx: 30, ly: 20, lw: 50, lh: 200 });
   });
 
-  it('back projection', () => {
-    assert.deepEqual(projectBoard(b, 'back'), { lx: -110, ly: 20, lw: 100, lh: 200 });
+  it('back projection (camera at +X, mirrored Z-Y)', () => {
+    assert.deepEqual(projectBoard(b, 'back'), { lx: -80, ly: 20, lw: 50, lh: 200 });
   });
 
-  it('left projection', () => {
-    assert.deepEqual(projectBoard(b, 'left'), { lx: 30, ly: 20, lw: 50, lh: 200 });
+  it('left projection (camera at -Z, shows X-Y)', () => {
+    assert.deepEqual(projectBoard(b, 'left'), { lx: 10, ly: 20, lw: 100, lh: 200 });
   });
 
-  it('right projection', () => {
-    assert.deepEqual(projectBoard(b, 'right'), { lx: -80, ly: 20, lw: 50, lh: 200 });
+  it('right projection (camera at +Z, mirrored X-Y)', () => {
+    assert.deepEqual(projectBoard(b, 'right'), { lx: -110, ly: 20, lw: 100, lh: 200 });
   });
 
   it('top projection', () => {
@@ -871,7 +872,7 @@ describe('projectBoard()', () => {
 
   it('board with null coordinates defaults to 0', () => {
     const nb = { w: 100, h: 200, d: 50, x: null, y: null, z: null };
-    assert.deepEqual(projectBoard(nb, 'front'), { lx: 0, ly: 0, lw: 100, lh: 200 });
+    assert.deepEqual(projectBoard(nb, 'front'), { lx: 0, ly: 0, lw: 50, lh: 200 });
   });
 });
 
@@ -879,14 +880,14 @@ describe('projectBoard()', () => {
 //  22. projAxisLabels()
 // ═══════════════════════════════════════════════════════
 describe('projAxisLabels()', () => {
-  it('front/back → X, Y', () => {
-    assert.deepEqual(projAxisLabels('front'), ['\u2192 X', '\u2191 Y']);
-    assert.deepEqual(projAxisLabels('back'), ['\u2192 X', '\u2191 Y']);
+  it('front/back → Z, Y', () => {
+    assert.deepEqual(projAxisLabels('front'), ['\u2192 Z', '\u2191 Y']);
+    assert.deepEqual(projAxisLabels('back'), ['\u2192 Z', '\u2191 Y']);
   });
 
-  it('left/right → Z, Y', () => {
-    assert.deepEqual(projAxisLabels('left'), ['\u2192 Z', '\u2191 Y']);
-    assert.deepEqual(projAxisLabels('right'), ['\u2192 Z', '\u2191 Y']);
+  it('left/right → X, Y', () => {
+    assert.deepEqual(projAxisLabels('left'), ['\u2192 X', '\u2191 Y']);
+    assert.deepEqual(projAxisLabels('right'), ['\u2192 X', '\u2191 Y']);
   });
 
   it('top/bottom → X, Z', () => {
@@ -1116,42 +1117,42 @@ describe('listViewDims() backward compat with multi-view', () => {
 //  28. depthSort()
 // ═══════════════════════════════════════════════════════
 describe('depthSort()', () => {
-  it('front: boards sorted by z+d descending (farthest first)', () => {
+  it('front: boards sorted by x+w descending (camera at -X)', () => {
+    const layout = [
+      { id: 'a', x: 0, w: 100, y: 0, z: 0, h: 10, d: 10 },
+      { id: 'b', x: 200, w: 100, y: 0, z: 0, h: 10, d: 10 },
+    ];
+    depthSort(layout, 'front');
+    assert.equal(layout[0].id, 'b');
+  });
+
+  it('back: boards sorted by x ascending (camera at +X)', () => {
+    const layout = [
+      { id: 'b', x: 200, w: 100, y: 0, z: 0, h: 10, d: 10 },
+      { id: 'a', x: 0, w: 100, y: 0, z: 0, h: 10, d: 10 },
+    ];
+    depthSort(layout, 'back');
+    assert.equal(layout[0].id, 'a');
+  });
+
+  it('left: boards sorted by z+d descending (camera at -Z)', () => {
     const layout = [
       { id: 'near', z: 0, d: 10, x: 0, y: 0, w: 10, h: 10 },
       { id: 'far', z: 50, d: 10, x: 0, y: 0, w: 10, h: 10 },
     ];
-    depthSort(layout, 'front');
+    depthSort(layout, 'left');
     assert.equal(layout[0].id, 'far');
     assert.equal(layout[1].id, 'near');
   });
 
-  it('back: boards sorted by z ascending (farthest first)', () => {
+  it('right: boards sorted by z ascending (camera at +Z)', () => {
     const layout = [
       { id: 'far', z: 50, d: 10, x: 0, y: 0, w: 10, h: 10 },
       { id: 'near', z: 0, d: 10, x: 0, y: 0, w: 10, h: 10 },
     ];
-    depthSort(layout, 'back');
+    depthSort(layout, 'right');
     assert.equal(layout[0].id, 'near');
     assert.equal(layout[1].id, 'far');
-  });
-
-  it('left: boards sorted by x+w descending', () => {
-    const layout = [
-      { id: 'a', x: 0, w: 100, y: 0, z: 0, h: 10, d: 10 },
-      { id: 'b', x: 200, w: 100, y: 0, z: 0, h: 10, d: 10 },
-    ];
-    depthSort(layout, 'left');
-    assert.equal(layout[0].id, 'b');
-  });
-
-  it('right: boards sorted by x ascending', () => {
-    const layout = [
-      { id: 'b', x: 200, w: 100, y: 0, z: 0, h: 10, d: 10 },
-      { id: 'a', x: 0, w: 100, y: 0, z: 0, h: 10, d: 10 },
-    ];
-    depthSort(layout, 'right');
-    assert.equal(layout[0].id, 'a');
   });
 
   it('top: boards sorted by y ascending', () => {
@@ -1294,5 +1295,122 @@ describe('editBoardInSource()', () => {
     const src = 'board[a] 100 x 200 x 50 "A"';
     const result = editBoardInSource(src, 'z', 'board[z] 1 x 1 x 1 "Z"');
     assert.equal(result, src);
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  parseBoardSourceRaw
+// ═══════════════════════════════════════════════════════
+describe('parseBoardSourceRaw', () => {
+  it('parses simple board with at position', () => {
+    const src = 'board[dn] $W x $T x $D "Dno"\n  at 0, 0, 0\n  color #7a4f28\n  view ft';
+    const f = parseBoardSourceRaw(src);
+    assert.equal(f.id, 'dn');
+    assert.equal(f.name, 'Dno');
+    assert.equal(f.w, '$W');
+    assert.equal(f.h, '$T');
+    assert.equal(f.d, '$D');
+    assert.equal(f.posType, 'at');
+    assert.equal(f.x, '0');
+    assert.equal(f.y, '0');
+    assert.equal(f.z, '0');
+    assert.equal(f.view, 'ft');
+    assert.equal(f.color, '#7a4f28');
+  });
+
+  it('parses board with variable expressions in position', () => {
+    const src = 'board[rt] $T x $H x $D "Pravý bok"\n  at {lt.right}+$W, 0, 0\n  color #9a6235\n  view sf';
+    const f = parseBoardSourceRaw(src);
+    assert.equal(f.id, 'rt');
+    assert.equal(f.w, '$T');
+    assert.equal(f.posType, 'at');
+    assert.equal(f.x, '{lt.right}+$W');
+    assert.equal(f.y, '0');
+    assert.equal(f.z, '0');
+  });
+
+  it('parses board with from/to position', () => {
+    const src = 'board[k1] $KLEN x 60 x 40 "Krokev"\n  from -200,1990 to 1875,1365\n  z 625\n  view fs';
+    const f = parseBoardSourceRaw(src);
+    assert.equal(f.id, 'k1');
+    assert.equal(f.w, '$KLEN');
+    assert.equal(f.posType, 'from');
+    assert.equal(f.x1, '-200');
+    assert.equal(f.y1, '1990');
+    assert.equal(f.x2, '1875');
+    assert.equal(f.y2, '1365');
+    assert.equal(f.fz, '625');
+    assert.equal(f.view, 'fs');
+  });
+
+  it('parses board with cuts', () => {
+    const src = 'board[left] $T x $H x $D "Left"\n  at 0, 0, 0\n  cut left 400 right 300\n  view fs';
+    const f = parseBoardSourceRaw(src);
+    assert.equal(f.cutLeft, '400');
+    assert.equal(f.cutRight, '300');
+    assert.equal(f.cutTop, '');
+    assert.equal(f.cutBottom, '');
+  });
+
+  it('parses single-line board', () => {
+    const src = 'board[fl] $W x $T x $D "Floor" at 0, 0, 0 view ft';
+    const f = parseBoardSourceRaw(src);
+    assert.equal(f.id, 'fl');
+    assert.equal(f.name, 'Floor');
+    assert.equal(f.posType, 'at');
+    assert.equal(f.view, 'ft');
+  });
+
+  it('returns null for empty input', () => {
+    assert.equal(parseBoardSourceRaw(''), null);
+    assert.equal(parseBoardSourceRaw(null), null);
+  });
+
+  it('preserves expression references in dimensions', () => {
+    const src = 'board[tp] $W+{lt.w} x $T x $D "Strop"\n  at {lt.x}, {lt.top}-$T, 0';
+    const f = parseBoardSourceRaw(src);
+    assert.equal(f.w, '$W+{lt.w}');
+    assert.equal(f.x, '{lt.x}');
+    assert.equal(f.y, '{lt.top}-$T');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  reconstructBoardLineRaw
+// ═══════════════════════════════════════════════════════
+describe('reconstructBoardLineRaw', () => {
+  it('reconstructs board with at position', () => {
+    const f = { id: 'dn', name: 'Dno', w: '$W', h: '$T', d: '$D', posType: 'at', x: '0', y: '0', z: '0', cutLeft: '', cutRight: '', cutTop: '', cutBottom: '', view: 'ft', color: '#7a4f28' };
+    const line = reconstructBoardLineRaw(f);
+    assert.ok(line.includes('board[dn] $W x $T x $D "Dno"'));
+    assert.ok(line.includes('at 0, 0, 0'));
+    assert.ok(line.includes('view ft'));
+    assert.ok(line.includes('color #7a4f28'));
+  });
+
+  it('reconstructs board with from/to position', () => {
+    const f = { id: 'k1', name: 'Krokev', w: '$KLEN', h: '60', d: '40', posType: 'from', x1: '-200', y1: '1990', x2: '1875', y2: '1365', fz: '625', cutLeft: '', cutRight: '', cutTop: '', cutBottom: '', view: 'fs', color: '' };
+    const line = reconstructBoardLineRaw(f);
+    assert.ok(line.includes('from -200,1990 to 1875,1365'));
+    assert.ok(line.includes('z 625'));
+  });
+
+  it('reconstructs board with cuts', () => {
+    const f = { id: 'a', name: 'A', w: '100', h: '200', d: '50', posType: 'none', cutLeft: '400', cutRight: '300', cutTop: '', cutBottom: '', view: '', color: '' };
+    const line = reconstructBoardLineRaw(f);
+    assert.ok(line.includes('cut left 400 right 300'));
+    assert.ok(!line.includes('top'));
+  });
+
+  it('round-trips with parseBoardSourceRaw', () => {
+    const src = 'board[rt] $T x $H x $D "Pravý bok"\n  at {lt.right}+$W, 0, 0\n  color #9a6235\n  view sf';
+    const fields = parseBoardSourceRaw(src);
+    const rebuilt = reconstructBoardLineRaw(fields);
+    const reparsed = parseBoardSourceRaw(rebuilt);
+    assert.equal(reparsed.id, fields.id);
+    assert.equal(reparsed.w, fields.w);
+    assert.equal(reparsed.x, fields.x);
+    assert.equal(reparsed.color, fields.color);
+    assert.equal(reparsed.view, fields.view);
   });
 });
