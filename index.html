@@ -153,12 +153,8 @@
     .edit-body{padding:12px;display:flex;flex-direction:column;gap:10px;}
     .edit-field{display:flex;flex-direction:column;gap:3px;}
     .edit-field label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);}
-    .edit-field input[type="text"],.edit-field input[type="number"]{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);background:var(--bg3);border:1px solid var(--line);border-radius:3px;padding:4px 8px;outline:none;}
-    .edit-field input:focus{border-color:var(--cyan);}
-    .edit-field input[type="color"]{width:32px;height:24px;border:1px solid var(--line);border-radius:3px;background:var(--bg3);cursor:pointer;padding:1px;}
-    .edit-row{display:flex;gap:6px;}
-    .edit-row .edit-field{flex:1;}
-    .edit-warn{font-size:9px;color:var(--amber);background:#201800;border:1px solid #302000;border-radius:3px;padding:4px 8px;line-height:1.4;}
+    .edit-field textarea{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.65;color:var(--code);background:var(--bg0);border:1px solid var(--line);border-radius:3px;padding:8px;outline:none;resize:vertical;tab-size:2;}
+    .edit-field textarea:focus{border-color:var(--cyan);}
     .edit-apply{font-family:'IBM Plex Sans',sans-serif;font-size:11px;font-weight:600;color:#000;background:var(--cyan);border:none;border-radius:4px;padding:6px 14px;cursor:pointer;transition:opacity .15s;}
     .edit-apply:hover{opacity:.85;}
 
@@ -353,24 +349,9 @@
       <div class="edit-header">Upravit desku <button id="edit-close">&times;</button></div>
       <div class="edit-body">
         <div class="edit-field">
-          <label>Název</label>
-          <input type="text" id="edit-name">
+          <label>DSL zdroj</label>
+          <textarea id="edit-source" rows="10"></textarea>
         </div>
-        <div class="edit-row">
-          <div class="edit-field"><label>Šířka</label><input type="number" id="edit-w"></div>
-          <div class="edit-field"><label>Výška</label><input type="number" id="edit-h"></div>
-          <div class="edit-field"><label>Hloubka</label><input type="number" id="edit-d"></div>
-        </div>
-        <div class="edit-row">
-          <div class="edit-field"><label>X</label><input type="number" id="edit-x"></div>
-          <div class="edit-field"><label>Y</label><input type="number" id="edit-y"></div>
-          <div class="edit-field"><label>Z</label><input type="number" id="edit-z"></div>
-        </div>
-        <div class="edit-row">
-          <div class="edit-field"><label>Barva</label><input type="color" id="edit-color"></div>
-          <div class="edit-field"><label>Pohled</label><input type="text" id="edit-view" placeholder="f, s, t, fs..."></div>
-        </div>
-        <div class="edit-warn">Editace nahradí výrazy ($W, {id.top}) za vypočtené hodnoty.</div>
         <button class="edit-apply" id="edit-apply">Uložit</button>
       </div>
     </div>
@@ -1518,18 +1499,9 @@ function openEditPanel(boardId) {
   if (!board) return;
   editingBoardId = boardId;
 
-  document.getElementById('edit-name').value = board.name;
-  document.getElementById('edit-w').value = board.w;
-  document.getElementById('edit-h').value = board.h;
-  document.getElementById('edit-d').value = board.d;
-  document.getElementById('edit-x').value = board.x ?? 0;
-  document.getElementById('edit-y').value = board.y ?? 0;
-  document.getElementById('edit-z').value = board.z ?? 0;
-  // Expand 3-char hex for color input
-  let col = board.color || '#c9a05a';
-  if (col.length === 4) col = '#' + col[1]+col[1] + col[2]+col[2] + col[3]+col[3];
-  document.getElementById('edit-color').value = col;
-  document.getElementById('edit-view').value = board.view || '';
+  const codeEl = document.getElementById('code');
+  const rawSource = extractBoardSource(codeEl.value, boardId);
+  document.getElementById('edit-source').value = rawSource;
 
   document.getElementById('edit-panel').classList.add('open');
 }
@@ -1543,28 +1515,10 @@ document.getElementById('edit-close').addEventListener('click', closeEditPanel);
 
 document.getElementById('edit-apply').addEventListener('click', () => {
   if (!editingBoardId) return;
-  const boards = window._lastBoards || [];
-  const board = boards.find(b => b.id === editingBoardId);
-  if (!board) return;
-
-  const newBoard = {
-    id: editingBoardId,
-    name: document.getElementById('edit-name').value,
-    w: Number(document.getElementById('edit-w').value),
-    h: Number(document.getElementById('edit-h').value),
-    d: Number(document.getElementById('edit-d').value),
-    x: Number(document.getElementById('edit-x').value),
-    y: Number(document.getElementById('edit-y').value),
-    z: Number(document.getElementById('edit-z').value),
-    hasPos: board.hasPos,
-    fromTo: board.fromTo,
-    cuts: board.cuts,
-    view: document.getElementById('edit-view').value || null,
-    color: document.getElementById('edit-color').value,
-  };
 
   const codeEl = document.getElementById('code');
-  const newSource = editBoardInSource(codeEl.value, editingBoardId, newBoard);
+  const newText = document.getElementById('edit-source').value;
+  const newSource = editBoardInSource(codeEl.value, editingBoardId, newText);
   codeEl.value = newSource;
   closeEditPanel();
   update();

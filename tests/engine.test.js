@@ -5,7 +5,7 @@ const {
   darken, boardCount, hasCuts, boardShape, listViewDims,
   VIEW_LABELS, autoDetectViews, listViewDimsMulti,
   encodeHash, decodeHash, projectBoard, projAxisLabels,
-  depthSort, reconstructBoardLine, editBoardInSource,
+  depthSort, reconstructBoardLine, extractBoardSource, editBoardInSource,
 } = require('../lib/engine.js');
 
 // Helper: create a parser with pre-set vars/boards for isolated method testing
@@ -1228,20 +1228,58 @@ describe('reconstructBoardLine()', () => {
 });
 
 // ═══════════════════════════════════════════════════════
-//  30. editBoardInSource()
+//  30. extractBoardSource()
+// ═══════════════════════════════════════════════════════
+describe('extractBoardSource()', () => {
+  it('extracts single-line board', () => {
+    const src = '$T = 18\nboard[a] $T x 200 x 50 "A" at 0, 0, 0\nboard[b] 50 x 50 x 50 "B"';
+    const result = extractBoardSource(src, 'a');
+    assert.equal(result, 'board[a] $T x 200 x 50 "A" at 0, 0, 0');
+  });
+
+  it('extracts multi-line board with continuations', () => {
+    const src = 'board[a] $W x $H x $D "A"\n  at 0, 0, 0\n  color #fff\nboard[b] 50 x 50 x 50 "B"';
+    const result = extractBoardSource(src, 'a');
+    assert.equal(result, 'board[a] $W x $H x $D "A"\n  at 0, 0, 0\n  color #fff');
+  });
+
+  it('preserves variables and expressions', () => {
+    const src = 'board[x] $W+$T x {a.top} x $D "X"\n  at {a.right}, 0, 0';
+    const result = extractBoardSource(src, 'x');
+    assert.ok(result.includes('$W+$T'));
+    assert.ok(result.includes('{a.top}'));
+    assert.ok(result.includes('{a.right}'));
+  });
+
+  it('returns empty string if board not found', () => {
+    assert.equal(extractBoardSource('board[a] 10 x 10 x 10 "A"', 'z'), '');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  31. editBoardInSource()
 // ═══════════════════════════════════════════════════════
 describe('editBoardInSource()', () => {
-  it('replaces single-line board', () => {
+  it('replaces single-line board with board object', () => {
     const src = '$T = 18\nboard[a] 100 x 200 x 50 "Old" at 0, 0, 0\nboard[b] 50 x 50 x 50 "B"';
     const newBoard = { id: 'a', w: 200, h: 300, d: 60, name: 'New', hasPos: true, x: 5, y: 6, z: 7, fromTo: null, cuts: null, view: null, color: null };
     const result = editBoardInSource(src, 'a', newBoard);
     assert.ok(result.includes('"New"'));
     assert.ok(result.includes('200 x 300 x 60'));
-    assert.ok(result.includes('board[b]')); // other board preserved
-    assert.ok(result.includes('$T = 18')); // var preserved
+    assert.ok(result.includes('board[b]'));
+    assert.ok(result.includes('$T = 18'));
   });
 
-  it('replaces multi-line board', () => {
+  it('replaces with raw text string', () => {
+    const src = 'board[a] 100 x 200 x 50 "A"\n  at 0, 0, 0\nboard[b] 50 x 50 x 50 "B"';
+    const newText = 'board[a] $W x $H x $D "A-new"\n  at 10, 20, 30';
+    const result = editBoardInSource(src, 'a', newText);
+    assert.ok(result.includes('$W x $H x $D'));
+    assert.ok(result.includes('"A-new"'));
+    assert.ok(result.includes('board[b]'));
+  });
+
+  it('replaces multi-line board with board object', () => {
     const src = 'board[a] 100 x 200 x 50 "A"\n  at 0, 0, 0\n  color #fff\nboard[b] 50 x 50 x 50 "B"';
     const newBoard = { id: 'a', w: 150, h: 250, d: 55, name: 'A2', hasPos: false, fromTo: null, cuts: null, view: 'f', color: '#000' };
     const result = editBoardInSource(src, 'a', newBoard);
@@ -1254,7 +1292,7 @@ describe('editBoardInSource()', () => {
 
   it('returns unchanged source if board not found', () => {
     const src = 'board[a] 100 x 200 x 50 "A"';
-    const result = editBoardInSource(src, 'z', { id: 'z', w: 1, h: 1, d: 1, name: 'Z' });
+    const result = editBoardInSource(src, 'z', 'board[z] 1 x 1 x 1 "Z"');
     assert.equal(result, src);
   });
 });
