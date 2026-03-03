@@ -242,18 +242,12 @@
             <div id="ctrl-groups-2d"></div>
           </div>
           <div class="ctrl-section">
-            <div class="ctrl-section-title">Ořez</div>
+            <div class="ctrl-section-title">Hloubka</div>
             <div class="ctrl-row">
-              <button class="ctrl-toggle" id="clip2d-h-toggle">✓</button>
-              <span style="font-size:10px;color:var(--dim2);width:14px;">H</span>
-              <input type="range" class="ctrl-slider" id="clip2d-h-slider" min="0" max="100" value="100" disabled>
-              <span class="ctrl-value" id="clip2d-h-val">—</span>
-            </div>
-            <div class="ctrl-row">
-              <button class="ctrl-toggle" id="clip2d-v-toggle">✓</button>
-              <span style="font-size:10px;color:var(--dim2);width:14px;">V</span>
-              <input type="range" class="ctrl-slider" id="clip2d-v-slider" min="0" max="100" value="100" disabled>
-              <span class="ctrl-value" id="clip2d-v-val">—</span>
+              <button class="ctrl-toggle" id="clip2d-depth-toggle">✓</button>
+              <span style="font-size:10px;color:var(--dim2);width:28px;" id="clip2d-depth-axis">Z</span>
+              <input type="range" class="ctrl-slider" id="clip2d-depth-slider" min="0" max="100" value="100" disabled>
+              <span class="ctrl-value" id="clip2d-depth-val">—</span>
             </div>
           </div>
           <div class="ctrl-section">
@@ -414,6 +408,50 @@ function render2DAssemble(boards) {
   // Depth sort — correct layer order for projection
   depthSort(layout, proj);
 
+  // Depth clipping — filter boards by depth axis
+  if (clipDepthEnabled && clipDepthVal < 100) {
+    // Determine depth axis label and range
+    function depthCoord(b) {
+      const bx = b.x ?? 0, by = b.y ?? 0, bz = b.z ?? 0;
+      switch (proj) {
+        case 'front':  return bz;
+        case 'back':   return -(bz + (b.d || 0));
+        case 'left':   return bx;
+        case 'right':  return -(bx + (b.w || 0));
+        case 'top':    return -(by + (b.h || 0));
+        case 'bottom': return by;
+        default: return 0;
+      }
+    }
+    function depthSize(b) {
+      switch (proj) {
+        case 'front': case 'back': return b.d || 0;
+        case 'left': case 'right': return b.w || 0;
+        case 'top': case 'bottom': return b.h || 0;
+        default: return 0;
+      }
+    }
+    let dMin = Infinity, dMax = -Infinity;
+    for (const b of layout) {
+      const dc = depthCoord(b);
+      dMin = Math.min(dMin, dc);
+      dMax = Math.max(dMax, dc + depthSize(b));
+    }
+    const cutoff = dMin + (dMax - dMin) * clipDepthVal / 100;
+    layout = layout.filter(b => depthCoord(b) < cutoff);
+
+    // Update depth axis label and value display
+    const axisName = { front: 'Z', back: 'Z', left: 'X', right: 'X', top: 'Y', bottom: 'Y' }[proj] || '?';
+    document.getElementById('clip2d-depth-axis').textContent = axisName;
+    document.getElementById('clip2d-depth-val').textContent = Math.round(cutoff);
+  } else if (clipDepthEnabled) {
+    const axisName = { front: 'Z', back: 'Z', left: 'X', right: 'X', top: 'Y', bottom: 'Y' }[proj] || '?';
+    document.getElementById('clip2d-depth-axis').textContent = axisName;
+    document.getElementById('clip2d-depth-val').textContent = 'max';
+  }
+
+  if (!layout.length) return;
+
   // Explode — push boards away from center
   if (explodeFactor2D > 0) {
     let clx = 0, cly = 0;
@@ -461,27 +499,7 @@ function render2DAssemble(boards) {
   for (let gx=0;gx<=W;gx+=40) svg.appendChild(svgEl('line',{x1:gx,y1:0,x2:gx,y2:H,stroke:'#1c2b3d','stroke-width':.5}));
   for (let gy=0;gy<=H;gy+=40) svg.appendChild(svgEl('line',{x1:0,y1:gy,x2:W,y2:gy,stroke:'#1c2b3d','stroke-width':.5}));
 
-  // Clip path for H/V clipping
-  let clipGroup = svg;
-  if (clipEnabled2D[0] || clipEnabled2D[1]) {
-    const defs = svgEl('defs');
-    const cp = svgEl('clipPath', { id: 'clip2d' });
-    const clipX = clipEnabled2D[0] ? tx(minX + (maxX - minX) * clipSliderVal2D[0] / 100) : W;
-    const clipY = clipEnabled2D[1] ? ty(minY + (maxY - minY) * clipSliderVal2D[1] / 100) : 0;
-    cp.appendChild(svgEl('rect', { x: 0, y: clipY, width: clipX, height: H - clipY }));
-    defs.appendChild(cp);
-    svg.appendChild(defs);
-    clipGroup = svgEl('g', { 'clip-path': 'url(#clip2d)' });
-    svg.appendChild(clipGroup);
-
-    // Update clip value display
-    if (clipEnabled2D[0]) {
-      document.getElementById('clip2d-h-val').textContent = Math.round(minX + (maxX - minX) * clipSliderVal2D[0] / 100);
-    }
-    if (clipEnabled2D[1]) {
-      document.getElementById('clip2d-v-val').textContent = Math.round(minY + (maxY - minY) * clipSliderVal2D[1] / 100);
-    }
-  }
+  const clipGroup = svg;
 
   // Helper: draw a board (rect or polygon) with grain, labels, dims into parent element
   function drawBoard(parent, b, ox, oy, bw, bh, dimParent, dimOx, dimOy) {
@@ -564,8 +582,8 @@ let boardVisibility = {}; // id -> bool
 
 // 2D assembled view state
 let groupState2D = {};           // groupName -> { opacity: 1.0 }
-let clipEnabled2D = [false, false]; // H, V axes
-let clipSliderVal2D = [100, 100];
+let clipDepthEnabled = false;
+let clipDepthVal = 100;          // slider 0..100
 let explodeFactor2D = 0;
 
 if (!window._groupCollapsed) window._groupCollapsed = {};
@@ -930,25 +948,22 @@ function render2DGroupSidebar(groups, boards) {
 }
 
 function initClip2DControls() {
-  const axes = ['h', 'v'];
-  for (let i = 0; i < 2; i++) {
-    const toggle = document.getElementById(`clip2d-${axes[i]}-toggle`);
-    const slider = document.getElementById(`clip2d-${axes[i]}-slider`);
-    const valEl = document.getElementById(`clip2d-${axes[i]}-val`);
+  const toggle = document.getElementById('clip2d-depth-toggle');
+  const slider = document.getElementById('clip2d-depth-slider');
+  const valEl = document.getElementById('clip2d-depth-val');
 
-    toggle.addEventListener('click', () => {
-      clipEnabled2D[i] = !clipEnabled2D[i];
-      toggle.classList.toggle('on', clipEnabled2D[i]);
-      slider.disabled = !clipEnabled2D[i];
-      if (!clipEnabled2D[i]) { valEl.textContent = '—'; }
-      update();
-    });
+  toggle.addEventListener('click', () => {
+    clipDepthEnabled = !clipDepthEnabled;
+    toggle.classList.toggle('on', clipDepthEnabled);
+    slider.disabled = !clipDepthEnabled;
+    if (!clipDepthEnabled) { valEl.textContent = '—'; }
+    update();
+  });
 
-    slider.addEventListener('input', () => {
-      clipSliderVal2D[i] = Number(slider.value);
-      update();
-    });
-  }
+  slider.addEventListener('input', () => {
+    clipDepthVal = Number(slider.value);
+    update();
+  });
 
   const explSlider = document.getElementById('explode2d-slider');
   const explVal = document.getElementById('explode2d-val');
